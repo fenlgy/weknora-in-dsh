@@ -343,6 +343,8 @@ test('the ask tool uses the configured WeKnora agent and keeps citations', async
 test('normalizes base URLs and clips oversized passages', () => {
   assert.equal(__internals.normalizeBase('http://host:8080/api/v1/'), 'http://host:8080');
   assert.equal(__internals.normalizeBase('https://host/kb/api/v1'), 'https://host/kb');
+  assert.equal(__internals.normalizeBase('host:8080'), 'http://host:8080', 'a bare host:port defaults to http');
+  assert.equal(__internals.normalizeBase('192.168.1.20:8080/kb'), 'http://192.168.1.20:8080/kb');
   assert.equal(__internals.normalizeBase('ftp://host'), undefined);
   const clipped = __internals.clip('知识库内容', 3);
   assert.equal(clipped.text, '知识库…');

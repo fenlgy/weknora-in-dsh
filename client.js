@@ -450,8 +450,12 @@ window.__ModuleLoader__.load({
      * @returns Patch record.
      */
     function patchFromDraft(draft) {
+      let baseUrl = String(draft.baseUrl ?? '').trim();
+      // Accept a bare host:port typed into the form; the address is normalized
+      // host-side as well, but doing it here lets an old host bundle agree.
+      if (baseUrl !== '' && !/^[a-z][a-z0-9+.-]*:\/\//i.test(baseUrl)) baseUrl = `http://${baseUrl}`;
       const patch = {
-        baseUrl: String(draft.baseUrl ?? '').trim(),
+        baseUrl,
         tenantId: String(draft.tenantId ?? '').trim(),
         agentId: String(draft.agentId ?? '').trim(),
       };
@@ -2550,6 +2554,17 @@ window.__ModuleLoader__.load({
         }
       }, [draft, fail, refresh, t]);
 
+      /** Let Enter submit the settings form from any field. */
+      const settingsOnKeyDown = useCallback(
+        (event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            void applySettings();
+          }
+        },
+        [applySettings],
+      );
+
       /** Probe the saved deployment without touching the form. */
       const probeSettings = useCallback(async () => {
         setTesting(true);
@@ -2946,6 +2961,7 @@ window.__ModuleLoader__.load({
                   value: draft.baseUrl ?? '',
                   spellCheck: false,
                   onChange: (event) => setDraft({ ...draft, baseUrl: event.target.value }),
+                  onKeyDown: settingsOnKeyDown,
                 }),
                 h('label', null, t('fieldKey')),
                 h('input', {
@@ -2955,6 +2971,7 @@ window.__ModuleLoader__.load({
                   value: draft.apiKey ?? '',
                   spellCheck: false,
                   onChange: (event) => setDraft({ ...draft, apiKey: event.target.value }),
+                  onKeyDown: settingsOnKeyDown,
                 }),
                 h('label', null, t('fieldTenant')),
                 h('input', {
@@ -2964,6 +2981,7 @@ window.__ModuleLoader__.load({
                   spellCheck: false,
                   inputMode: 'numeric',
                   onChange: (event) => setDraft({ ...draft, tenantId: event.target.value }),
+                  onKeyDown: settingsOnKeyDown,
                 }),
                 h('label', null, t('fieldToken')),
                 h('input', {
@@ -2973,6 +2991,7 @@ window.__ModuleLoader__.load({
                   value: draft.token ?? '',
                   spellCheck: false,
                   onChange: (event) => setDraft({ ...draft, token: event.target.value }),
+                  onKeyDown: settingsOnKeyDown,
                 }),
                 h('label', null, t('fieldAgent')),
                 h('input', {
@@ -2981,6 +3000,7 @@ window.__ModuleLoader__.load({
                   value: draft.agentId ?? '',
                   spellCheck: false,
                   onChange: (event) => setDraft({ ...draft, agentId: event.target.value }),
+                  onKeyDown: settingsOnKeyDown,
                 }),
               ),
               h('div', { className: 'wkn-sub', style: { marginTop: '10px' } }, t('tenantHint')),

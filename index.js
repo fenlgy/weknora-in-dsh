@@ -150,8 +150,11 @@ function first(...values) {
  * @returns Normalized origin + optional mount prefix, or undefined.
  */
 export function normalizeBase(value) {
-  const raw = text(value);
+  let raw = text(value);
   if (raw === undefined) return undefined;
+  // A host:port or host/path without a scheme is the most common typo in this
+  // form; assume plain HTTP for it instead of rejecting the whole save.
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) raw = `http://${raw}`;
   let parsed;
   try {
     parsed = new URL(raw);
