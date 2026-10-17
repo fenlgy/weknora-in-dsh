@@ -201,6 +201,75 @@ if (captured !== undefined && reactStack !== undefined) {
     assert.equal(manual.status, 'completed');
   });
 
+  test('walks dropped directories into relative upload paths', async () => {
+    const { collectDropEntries } = plugin.__internals;
+    const fileEntry = (name) => ({
+      isFile: true,
+      isDirectory: false,
+      name,
+      file: (resolve) => resolve(new File(['x'], name, { type: 'text/markdown' })),
+    });
+    const dirEntry = (name, children) => ({
+      isFile: false,
+      isDirectory: true,
+      name,
+      createReader: () => {
+        let sent = false;
+        return {
+          readEntries: (resolve) => {
+            if (sent) return resolve([]);
+            sent = true;
+            return resolve(children);
+          },
+        };
+      },
+    });
+    const result = await collectDropEntries(
+      [
+        dirEntry('docs', [fileEntry('a.md'), dirEntry('sub', [fileEntry('b.md')]), fileEntry('.DS_Store')]),
+        fileEntry('root.md'),
+      ],
+      [],
+    );
+    assert.deepEqual(
+      result.items.map((item) => item.path),
+      ['docs/a.md', 'docs/sub/b.md', 'root.md'],
+    );
+    assert.equal(result.truncated, false);
+
+    const fallback = await collectDropEntries([], [new File(['x'], 'f.txt'), new File(['x'], '.DS_Store')]);
+    assert.deepEqual(fallback.items.map((item) => item.path), ['f.txt']);
+  });
+
+  test('caps a folder drop at the per-drop file limit', async () => {
+    const { collectDropEntries } = plugin.__internals;
+    const fileEntry = (name) => ({
+      isFile: true,
+      isDirectory: false,
+      name,
+      file: (resolve) => resolve(new File(['x'], name)),
+    });
+    const dirEntry = (name, children) => ({
+      isFile: false,
+      isDirectory: true,
+      name,
+      createReader: () => {
+        let sent = false;
+        return {
+          readEntries: (resolve) => {
+            if (sent) return resolve([]);
+            sent = true;
+            return resolve(children);
+          },
+        };
+      },
+    });
+    const many = Array.from({ length: 501 }, (_, index) => fileEntry(`f${index}.md`));
+    const result = await collectDropEntries([dirEntry('big', many)], []);
+    assert.equal(result.items.length, 500);
+    assert.equal(result.truncated, true);
+  });
+
   test('classifies original files by media type', () => {
     const { classifyContent, fileNameFrom, readSearchResult, readKnowledgeList } = plugin.__internals;
     assert.equal(classifyContent('application/pdf', 'x.pdf'), 'pdf');

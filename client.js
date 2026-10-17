@@ -572,6 +572,67 @@ window.__ModuleLoader__.load({
       }
     }
 
+    /** Hard ceiling for one drop, so a huge folder cannot queue forever. */
+    const MAX_DROP_FILES = 500;
+    /** OS bookkeeping files that should never become knowledge. */
+    const IGNORED_UPLOAD_NAMES = new Set(['.DS_Store', 'Thumbs.db']);
+
+    /**
+     * Flatten a dropped DataTransfer into upload entries, walking directories.
+     *
+     * `webkitGetAsEntry()` must be read synchronously inside the drop handler;
+     * the caller passes the captured entries in. Files keep their path relative
+     * to the drop (folder/sub/file.md), which WeKnora stores as folder_path +
+     * file name via the multipart `fileName` field.
+     *
+     * @param entries - Captured FileSystemEntry values (may be empty).
+     * @param files - Fallback FileList for browsers without the entries API.
+     * @returns `{items, truncated}` where items are `{file, path}`.
+     */
+    async function collectDropEntries(entries, files) {
+      if (entries.length === 0) {
+        const items = Array.from(files ?? [])
+          .filter((file) => !IGNORED_UPLOAD_NAMES.has(file.name))
+          .map((file) => ({ file, path: file.name }));
+        return { items, truncated: false };
+      }
+      const items = [];
+      let truncated = false;
+      const walk = async (entry, prefix) => {
+        if (items.length >= MAX_DROP_FILES) {
+          truncated = true;
+          return;
+        }
+        if (entry.isFile === true) {
+          try {
+            const file = await new Promise((resolve, reject) => entry.file(resolve, reject));
+            if (IGNORED_UPLOAD_NAMES.has(file.name)) return;
+            items.push({ file, path: `${prefix}${file.name}` });
+          } catch {
+            /* unreadable entry: skip it */
+          }
+          return;
+        }
+        if (entry.isDirectory === true) {
+          const reader = entry.createReader();
+          while (items.length < MAX_DROP_FILES) {
+            let batch;
+            try {
+              batch = await new Promise((resolve, reject) => reader.readEntries(resolve, reject));
+            } catch {
+              return;
+            }
+            if (batch.length === 0) return;
+            for (const child of batch) await walk(child, `${prefix}${entry.name}/`);
+          }
+          truncated = true;
+        }
+      };
+      for (const entry of entries) await walk(entry, '');
+      items.sort((left, right) => left.path.localeCompare(right.path));
+      return { items, truncated };
+    }
+
     /**
      * Whether a drag carries OS files (not text or an internal element drag).
      * @param event - Drag event.
@@ -2428,6 +2489,8 @@ window.__ModuleLoader__.load({
       /** Human-readable progress while files upload. */
       const [uploading, setUploading] = useState(null);
       const uploadInput = useRef(null);
+      /** Hidden directory picker; same path as dragging a folder. */
+      const folderInput = useRef(null);
       /** True while files are dragged over the open knowledge base. */
       const [dragging, setDragging] = useState(false);
       /** enter/leave nesting depth, so child boundaries do not flicker the overlay. */
@@ -2752,27 +2815,36 @@ window.__ModuleLoader__.load({
        * large batch does not multiply the upload budget by the concurrency.
        */
       const uploadFiles = useCallback(
-        async (files) => {
-          if (openKb === null || files.length === 0) return;
+        async (input) => {
+          if (openKb === null || input.length === 0) return;
+          // Callers hand over File objects or `{file, path}` entries (folder drops).
+          const entries = input.map((entry) =>
+            typeof File !== 'undefined' && entry instanceof File ? { file: entry, path: entry.name } : entry,
+          );
           const failures = [];
           setBusy(true);
-          for (let index = 0; index < files.length; index += 1) {
-            const file = files[index];
-            setUploading(t('uploading', { name: file.name, index: index + 1, total: files.length }));
+          for (let index = 0; index < entries.length; index += 1) {
+            const entry = entries[index];
+            const relativePath = entry.path === '' ? entry.file.name : entry.path;
+            setUploading(t('uploading', { name: relativePath, index: index + 1, total: entries.length }));
             try {
               const form = new FormData();
-              form.append('file', file, file.name);
+              form.append('file', entry.file, entry.file.name);
+              // A folder upload keeps its relative path; WeKnora splits it into
+              // folder_path + display file name on the server.
+              if (relativePath !== entry.file.name) form.append('fileName', relativePath);
               await callForm(`/api/v1/knowledge-bases/${encodeURIComponent(openKb.id)}/knowledge/file`, form);
             } catch (error) {
-              failures.push(`${file.name}: ${error instanceof Error ? error.message : String(error)}`);
+              failures.push(`${relativePath}: ${error instanceof Error ? error.message : String(error)}`);
             }
           }
           setUploading(null);
           setBusy(false);
           if (uploadInput.current !== null) uploadInput.current.value = '';
+          if (folderInput.current !== null) folderInput.current.value = '';
           await Promise.all([reloadDocs(), refresh(settings)]);
-          if (failures.length === 0) setNote({ kind: 'ok', text: t('uploadDone', { count: files.length }) });
-          else setNote({ kind: 'error', text: `${t('uploadPartial', { count: files.length - failures.length })}\n${failures.join('\n')}` });
+          if (failures.length === 0) setNote({ kind: 'ok', text: t('uploadDone', { count: entries.length }) });
+          else setNote({ kind: 'error', text: `${t('uploadPartial', { count: entries.length - failures.length })}\n${failures.join('\n')}` });
         },
         [openKb, refresh, reloadDocs, settings, t],
       );
@@ -2819,8 +2891,21 @@ window.__ModuleLoader__.load({
           dragDepth.current = 0;
           setDragging(false);
           if (dialogOpen) return;
-          const files = Array.from(event.dataTransfer?.files ?? []);
-          if (files.length === 0) return;
+          const dataTransfer = event.dataTransfer;
+          // Capture entries synchronously: DataTransfer items are invalidated
+          // once this handler yields, but directory traversal is asynchronous.
+          const entries = [];
+          for (const item of Array.from(dataTransfer?.items ?? [])) {
+            if (item.kind !== 'file') continue;
+            try {
+              const entry = item.webkitGetAsEntry?.();
+              if (entry !== null && entry !== undefined) entries.push(entry);
+            } catch {
+              /* fall back to the FileList below */
+            }
+          }
+          const files = Array.from(dataTransfer?.files ?? []);
+          if (files.length === 0 && entries.length === 0) return;
           if (openKb === null) {
             setNote({ kind: 'error', text: t('dropOpenKbFirst') });
             return;
@@ -2829,7 +2914,17 @@ window.__ModuleLoader__.load({
             setNote({ kind: 'error', text: t('dropBusy') });
             return;
           }
-          void uploadFiles(files);
+          void (async () => {
+            const collected = await collectDropEntries(entries, files);
+            if (collected.items.length === 0) {
+              setNote({ kind: 'error', text: t('dropEmpty') });
+              return;
+            }
+            await uploadFiles(collected.items);
+            if (collected.truncated) {
+              setNote({ kind: 'error', text: t('dropTooMany', { max: MAX_DROP_FILES }) });
+            }
+          })();
         },
         [busy, dialogOpen, openKb, t, uploadFiles],
       );
@@ -3489,6 +3584,17 @@ window.__ModuleLoader__.load({
                                   className: 'wkn-btn',
                                   'data-size': 'sm',
                                   disabled: busy,
+                                  onClick: () => folderInput.current?.click(),
+                                },
+                                t('uploadFolder'),
+                              ),
+                              h(
+                                'button',
+                                {
+                                  type: 'button',
+                                  className: 'wkn-btn',
+                                  'data-size': 'sm',
+                                  disabled: busy,
                                   onClick: () => setShowUrlImport(true),
                                 },
                                 t('importUrl'),
@@ -3557,6 +3663,24 @@ window.__ModuleLoader__.load({
                               onChange: (event) => {
                                 const files = Array.from(event.target.files ?? []);
                                 if (files.length > 0) void uploadFiles(files);
+                              },
+                            }),
+                            h('input', {
+                              type: 'file',
+                              multiple: true,
+                              webkitdirectory: '',
+                              directory: '',
+                              ref: folderInput,
+                              style: { display: 'none' },
+                              onChange: (event) => {
+                                const files = Array.from(event.target.files ?? []);
+                                if (files.length === 0) return;
+                                void uploadFiles(
+                                  files.map((file) => ({
+                                    file,
+                                    path: file.webkitRelativePath === '' ? file.name : file.webkitRelativePath,
+                                  })),
+                                );
                               },
                             }),
                             uploading === null
@@ -3707,6 +3831,7 @@ window.__ModuleLoader__.load({
         readAgents,
         readReference,
         parseManualMetadata,
+        collectDropEntries,
         readKnowledgeBases,
         formatSize,
         relativeTime,
@@ -3852,10 +3977,13 @@ window.__ModuleLoader__.load({
                 uploading: '正在上传 {index}/{total}：{name}',
                 uploadDone: '已上传 {count} 个文件，解析在 WeKnora 后台进行。',
                 dropTitle: '松开即可上传',
-                dropHint: '文件会直接上传到「{name}」，支持一次拖入多个',
-                dropInline: '可将文件拖到此区域上传',
+                dropHint: '文件或文件夹会直接上传到「{name}」，支持一次拖入多个',
+                dropInline: '可将文件或文件夹拖到此区域上传',
                 dropOpenKbFirst: '请先打开一个知识库，再把文件拖进来。',
                 dropBusy: '正在上传或加载，请稍后再拖入文件。',
+                uploadFolder: '上传文件夹',
+                dropEmpty: '没有找到可上传的文件。',
+                dropTooMany: '一次最多上传 {max} 个文件，已只处理前 {max} 个。',
                 uploadPartial: '成功上传 {count} 个文件，其余失败：',
                 articleCreateTitle: '新建文章',
                 articleEditTitle: '编辑文章',
@@ -4031,10 +4159,13 @@ window.__ModuleLoader__.load({
                 uploading: 'Uploading {index}/{total}: {name}',
                 uploadDone: 'Uploaded {count} file(s); WeKnora parses them in the background.',
                 dropTitle: 'Drop to upload',
-                dropHint: 'Files go straight into "{name}" — drop several at once',
-                dropInline: 'Drag files here to upload',
+                dropHint: 'Files or whole folders go straight into "{name}"',
+                dropInline: 'Drag files or folders here to upload',
                 dropOpenKbFirst: 'Open a knowledge base first, then drop files into it.',
                 dropBusy: 'An upload or reload is in progress — try dropping again in a moment.',
+                uploadFolder: 'Upload folder',
+                dropEmpty: 'No uploadable files were found.',
+                dropTooMany: 'At most {max} files per drop — only the first {max} were processed.',
                 uploadPartial: 'Uploaded {count} file(s); the rest failed:',
                 articleCreateTitle: 'New article',
                 articleEditTitle: 'Edit article',

@@ -6,6 +6,7 @@ and WeKnora-agent chat all have to work against the mock deployment.
 
 Usage: python3 test/e2e/panel.py <web-url-with-token>
 """
+import os
 import sys
 import tempfile
 import time
@@ -190,6 +191,23 @@ with sync_playwright() as playwright:
     if page.locator(".wkn-drop-overlay").count() != 0:
         fail(page, "drop overlay did not disappear after drop")
     page.screenshot(path=str(OUT / "05c-dropped.png"))
+
+    # 5c. Folder picker: every file keeps its relative directory path.
+    folder_name = f"wkn-folder-{RUN}"
+    folder_root = Path(tempfile.mkdtemp(prefix="wkn-e2e-"))
+    os.makedirs(folder_root / folder_name / "subdir")
+    top_name = f"folder-top-{RUN}"
+    nested_name = f"folder-nested-{RUN}"
+    (folder_root / folder_name / f"{top_name}.md").write_text("# top", encoding="utf-8")
+    (folder_root / folder_name / "subdir" / f"{nested_name}.md").write_text("# nested", encoding="utf-8")
+    page.locator("input[webkitdirectory]").set_input_files(str(folder_root / folder_name))
+    page.wait_for_timeout(3500)
+    sidebar_text = panel.inner_text()
+    if top_name not in sidebar_text or nested_name not in sidebar_text:
+        fail(page, "folder picker did not upload both files")
+    if panel.locator(".wkn-cell-name span[title*='subdir']").count() == 0:
+        fail(page, "folder picker did not preserve the relative directory path")
+    page.screenshot(path=str(OUT / "05d-folder.png"))
 
     # 6. Chat with the WeKnora agent.
     page.get_by_role("button", name="智能体", exact=True).click()

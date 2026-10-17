@@ -209,18 +209,26 @@ const server = http.createServer(async (req, res) => {
   const uploadMatch = /^\/api\/v1\/knowledge-bases\/([^/]+)\/knowledge\/file$/.exec(path);
   if (uploadMatch !== null && method === 'POST') {
     const raw = body.toString('latin1');
+    const text = body.toString('utf8');
     const name = /filename="([^"]+)"/.exec(raw)?.[1] ?? 'upload.bin';
+    // Folder uploads send the relative path in the `fileName` form field, the
+    // same contract WeKnora uses to derive folder_path + display name.
+    const custom = /name="fileName"\r?\n\r?\n([^\r\n]*)/.exec(text)?.[1]?.trim() ?? '';
+    const relative = custom === '' ? name : custom.replace(/\\/g, '/');
+    const slash = relative.lastIndexOf('/');
+    const folder = slash < 0 ? '' : relative.slice(0, slash);
+    const base = slash < 0 ? relative : relative.slice(slash + 1);
     const doc = {
       id: `doc-${state.docSeq += 1}`,
       knowledge_base_id: uploadMatch[1],
-      title: name.replace(/\.[^.]+$/, ''),
-      file_name: name,
-      file_type: name.split('.').pop() ?? 'bin',
+      title: base.replace(/\.[^.]+$/, ''),
+      file_name: base,
+      file_type: base.split('.').pop() ?? 'bin',
       type: 'file',
       source: 'file',
       parse_status: 'pending',
       file_size: 1024,
-      folder_path: '',
+      folder_path: folder,
       metadata: {},
       updated_at: new Date().toISOString(),
     };
