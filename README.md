@@ -146,8 +146,9 @@ DSH_HOME=$PWD/.dsh-test node ~/.dsh/profiles/node_modules/@deepseek-ai/dsh/lib/b
 python3 test/e2e/panel.py "http://127.0.0.1:19402/?token=<printed-token>"
 ```
 
-`test/e2e/panel.py` 会验证：侧边栏入口、知识库列表、文章表格、新建文章、multipart 上传、
-WeKnora 智能体流式问答与引用、检索命中，并截图到 `test/e2e/screenshots/`。
+`test/e2e/panel.py` 会验证：侧边栏入口、设置「测试连接」、知识库列表与新建/删除、文章表格、
+新建文章、重新解析、删除、multipart 上传、WeKnora 智能体流式问答与引用、检索命中，并截图到
+`test/e2e/screenshots/`。
 
 `test/e2e/desktop.py` 则用来检查**正在运行的桌面应用**：它复用桌面窗口自己的登录 Cookie，
 在无头浏览器里加载 `127.0.0.1:19387`，确认侧边栏入口、真实知识库与真实智能体列表都渲染出来

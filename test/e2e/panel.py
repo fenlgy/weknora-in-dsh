@@ -8,6 +8,7 @@ Usage: python3 test/e2e/panel.py <web-url-with-token>
 """
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -15,6 +16,11 @@ from playwright.sync_api import sync_playwright
 URL = sys.argv[1]
 OUT = Path(__file__).parent / "screenshots"
 OUT.mkdir(parents=True, exist_ok=True)
+
+# Unique names keep reruns independent of state left by an earlier run.
+RUN = str(int(time.time()))[-5:]
+KB_NAME = f"端到端测试库-{RUN}"
+ARTICLE = f"Playwright 测试文章-{RUN}"
 
 
 def fail(page, message):
@@ -29,6 +35,10 @@ with sync_playwright() as playwright:
     browser = playwright.chromium.launch(headless=True)
     context = browser.new_context(viewport={"width": 1440, "height": 900}, locale="zh-CN")
     page = context.new_page()
+    page.on("dialog", lambda dialog: dialog.accept())
+    # The panel uses window.confirm for destructive actions; a stubbed confirm
+    # keeps the test deterministic across headless dialog handling.
+    page.add_init_script("window.confirm = () => true")
     console = []
     page.on("console", lambda message: console.append(f"{message.type}: {message.text}"))
     page.goto(URL, wait_until="domcontentloaded")
@@ -68,6 +78,35 @@ with sync_playwright() as playwright:
         fail(page, "new-knowledge-base action missing")
     page.screenshot(path=str(OUT / "02-kbs.png"))
 
+    # 2b. Settings round-trip: the host probe must reach the deployment.
+    panel.get_by_role("button", name="设置", exact=True).first.click()
+    page.wait_for_timeout(800)
+    page.get_by_role("button", name="测试连接", exact=True).click()
+    page.wait_for_timeout(1200)
+    if "连接成功" not in panel.inner_text():
+        fail(page, "test-connection did not report success")
+    page.get_by_role("button", name="关闭", exact=True).last.click()
+    page.wait_for_timeout(500)
+
+    # 2c. Create a knowledge base, then delete it again.
+    page.get_by_role("button", name="新建知识库").first.click()
+    dialog = page.locator(".wkn-modal")
+    dialog.wait_for(state="visible", timeout=5000)
+    dialog.locator("input.wkn-input").first.fill(KB_NAME)
+    page.get_by_role("button", name="创建", exact=True).click()
+    page.wait_for_timeout(1800)
+    if KB_NAME not in panel.inner_text():
+        fail(page, "created knowledge base is not in the grid")
+    page.get_by_text(KB_NAME, exact=True).first.click()
+    page.wait_for_timeout(1200)
+    page.get_by_role("button", name="删除知识库", exact=True).click()
+    page.wait_for_timeout(1800)
+    # The success banner names the deleted KB, so look at the cards, not text.
+    if panel.locator(".wkn-kb-name", has_text=KB_NAME).count() > 0:
+        fail(page, "deleted knowledge base is still listed")
+    if "已删除知识库" not in panel.inner_text():
+        fail(page, "delete did not report success")
+
     # 3. Open one knowledge base and see its document table.
     page.get_by_text("产品文档", exact=True).first.click()
     page.wait_for_timeout(1500)
@@ -80,14 +119,28 @@ with sync_playwright() as playwright:
     page.get_by_role("button", name="新建文章").first.click()
     dialog = page.locator(".wkn-modal")
     dialog.wait_for(state="visible", timeout=5000)
-    dialog.locator("input.wkn-input").first.fill("Playwright 测试文章")
+    dialog.locator("input.wkn-input").first.fill(ARTICLE)
     dialog.locator("textarea.wkn-textarea").first.fill("# 测试\n\n这是端到端测试创建的文章。")
     dialog.locator("select.wkn-select").first.select_option("publish")
     page.get_by_role("button", name="保存", exact=True).click()
     page.wait_for_timeout(2000)
-    if "Playwright 测试文章" not in panel.inner_text():
+    if ARTICLE not in panel.inner_text():
         fail(page, "created article is not in the document table")
     page.screenshot(path=str(OUT / "04-article-created.png"))
+
+    # 4b. Re-parse and delete the article through the row actions.
+    row = panel.locator(".wkn-table tbody tr", has_text=ARTICLE).first
+    row.get_by_role("button", name="重新解析", exact=True).click()
+    page.wait_for_timeout(1500)
+    if "已提交重新解析" not in panel.inner_text():
+        fail(page, "reparse action did not report success")
+    row = panel.locator(".wkn-table tbody tr", has_text=ARTICLE).first
+    row.get_by_role("button", name="删除", exact=True).click()
+    page.wait_for_timeout(1800)
+    if panel.locator(".wkn-table tbody tr", has_text=ARTICLE).count() > 0:
+        fail(page, "deleted article is still in the document table")
+    if "已删除" not in panel.inner_text():
+        fail(page, "delete did not report success")
 
     # 5. Upload one file through the real multipart proxy.
     with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8") as handle:

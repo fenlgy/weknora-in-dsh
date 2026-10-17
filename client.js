@@ -2482,7 +2482,6 @@ window.__ModuleLoader__.load({
             return;
           }
           setBusy(true);
-          setNote(null);
           try {
             const search = new URLSearchParams({ page: String(page), page_size: String(DOC_PAGE_SIZE) });
             if (keyword.trim() !== '') search.set('keyword', keyword.trim());
@@ -2795,8 +2794,9 @@ window.__ModuleLoader__.load({
           setBusy(true);
           try {
             await call(`/api/v1/knowledge/${encodeURIComponent(doc.id)}/reparse`, { method: 'POST', body: {} });
-            setNote({ kind: 'ok', text: t('reparseQueued', { name: doc.title }) });
+            // Reload first: loadDocs clears the shared banner on entry.
             await reloadDocs();
+            setNote({ kind: 'ok', text: t('reparseQueued', { name: doc.title }) });
           } catch (error) {
             fail(error);
           } finally {
