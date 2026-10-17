@@ -738,6 +738,11 @@ async function handleProxy(req, res, config) {
   if (typeof req.headers['content-disposition'] === 'string') {
     headers['content-disposition'] = req.headers['content-disposition'];
   }
+  // Node's fetch transparently decodes gzip/br. Asking for identity (and never
+  // relaying a stale content-encoding) keeps the bytes we hand the browser
+  // decodable: a forwarded `content-encoding: gzip` over plain JSON makes the
+  // browser fail the fetch with ERR_CONTENT_DECODING_FAILED.
+  headers['accept-encoding'] = 'identity';
 
   const isChat = /-chat\//.test(requestUrl.pathname) || /agent-chat|knowledge-chat/.test(requestUrl.pathname);
   const timeoutMs = isChat ? merged.chatTimeoutMs : merged.requestTimeoutMs;
@@ -755,7 +760,6 @@ async function handleProxy(req, res, config) {
     });
     const contentType = upstream.headers.get('content-type') ?? 'application/octet-stream';
     const disposition = upstream.headers.get('content-disposition');
-    const contentEncoding = upstream.headers.get('content-encoding');
     const streaming = /text\/event-stream/i.test(contentType) || isChat;
     if (streaming && upstream.body !== null) {
       if (!res.headersSent) {
@@ -764,7 +768,6 @@ async function handleProxy(req, res, config) {
           'cache-control': 'no-cache, no-transform',
           'content-type': contentType,
           connection: 'keep-alive',
-          ...(contentEncoding === null ? {} : { 'content-encoding': contentEncoding }),
         });
       }
       const reader = upstream.body.getReader();
@@ -786,7 +789,6 @@ async function handleProxy(req, res, config) {
       'content-type': contentType,
       'content-length': String(payload.byteLength),
       ...(disposition === null ? {} : { 'content-disposition': disposition }),
-      ...(contentEncoding === null ? {} : { 'content-encoding': contentEncoding }),
     });
     res.end(payload);
   } catch (error) {

@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
+import { gzipSync } from 'node:zlib';
 import { once } from 'node:events';
 import test from 'node:test';
 
@@ -95,6 +96,16 @@ const upstream = await listen(async (req, res) => {
   if (pathname === '/api/v1/knowledge/doc-1') {
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ success: true, data: { id: 'doc-1', title: '退款流程' } }));
+    return;
+  }
+  if (pathname === '/api/v1/gzip-check') {
+    const zipped = gzipSync(Buffer.from(JSON.stringify({ success: true, data: { compressed: true } })));
+    res.writeHead(200, {
+      'content-type': 'application/json',
+      'content-encoding': 'gzip',
+      'content-length': String(zipped.length),
+    });
+    res.end(zipped);
     return;
   }
   if (pathname === '/api/v1/knowledge-search') {
@@ -278,6 +289,14 @@ test('streams SSE replies instead of buffering them', async () => {
   const text = await response.text();
   assert.match(text, /"response_type":"answer"/);
   assert.match(text, /"response_type":"complete"/);
+});
+
+test('never relays a stale content-encoding header', async () => {
+  const response = await callRoute(routeRef, '/weknora/api/v1/gzip-check');
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-encoding'), null);
+  const body = await response.json();
+  assert.equal(body.data.compressed, true);
 });
 
 test('reports an unconfigured deployment with an actionable error', async () => {

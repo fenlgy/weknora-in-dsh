@@ -60,6 +60,10 @@ DSH 的 profile 由应用管理，安装走官方插件入口：
 
 > 说明：本包用 `dsh.bundle.patch` 声明组合包、用 `dsh.client` 声明浏览器侧 bundle。
 > `client.js` 是纯 JS（不是构建产物），没有安装期构建步骤。
+>
+> DSH 应用自身升级后，profile 的 `dsh.profile.bundles` 可能被升级流程重置，表现为「知识库」
+> 入口和 `/weknora` 路由一起消失（此时面板里保存设置会失败、甚至点不到面板）。去「插件」页
+> 重新安装一次本插件即可恢复。
 
 也可以从命令行安装（非 desktop profile）：
 
