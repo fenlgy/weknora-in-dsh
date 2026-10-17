@@ -51,25 +51,48 @@
 
 ## 2. 安装
 
-DSH 的 profile 由应用管理，安装走官方插件入口：
+代码仓库：**https://github.com/fenlgy/weknora-in-dsh**
+
+### 方式 A：DSH 图形界面（推荐）
 
 1. 打开 DeepSeek Harness → 左侧「**插件**」→「**添加插件**」；
-2. 粘贴本目录的绝对路径，确认安装；
-3. 安装器会把它加入当前 profile 的 `dsh.profile.bundles` 并启用；
+2. 安装源填 GitHub 仓库地址：
+
+   ```
+   https://github.com/fenlgy/weknora-in-dsh
+   ```
+
+3. 确认安装。安装器会通过 pnpm 拉取仓库，并把它加入当前 profile 的
+   `dsh.profile.bundles`；
 4. **刷新页面**（macOS 上 `Cmd+R`），左侧出现「知识库」入口。
 
+desktop profile 由桌面应用托管，请用这个图形入口安装/卸载/更新。
+
+### 方式 B：命令行（非 desktop profile）
+
+```sh
+dsh plugin --profile web add github:fenlgy/weknora-in-dsh
+# 或者
+dsh plugin --profile web add https://github.com/fenlgy/weknora-in-dsh
+```
+
+### 本地开发
+
+```sh
+dsh plugin --profile web add /path/to/weknora-in-dsh
+```
+
+改 `client.js` 后刷新页面即可；改 `index.js`（宿主侧）需要重启 DSH。
+
 > 说明：本包用 `dsh.bundle.patch` 声明组合包、用 `dsh.client` 声明浏览器侧 bundle。
-> `client.js` 是纯 JS（不是构建产物），没有安装期构建步骤。
+> `client.js` 是纯 JS（不是构建产物），安装时不需要构建。
+>
+> 本项目目前没有发布到 npm，从 GitHub 安装得到的是仓库快照。**更新时先在「插件」页卸载再安装**
+> （非官方插件没有内置的“更新”按钮）。
 >
 > DSH 应用自身升级后，profile 的 `dsh.profile.bundles` 可能被升级流程重置，表现为「知识库」
 > 入口和 `/weknora` 路由一起消失（此时面板里保存设置会失败、甚至点不到面板）。去「插件」页
 > 重新安装一次本插件即可恢复。
-
-也可以从命令行安装（非 desktop profile）：
-
-```sh
-dsh plugin --profile web add /path/to/dsh-weknora
-```
 
 ---
 

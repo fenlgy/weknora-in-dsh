@@ -1,7 +1,6 @@
 {
   "name": "dsh-weknora",
   "version": "0.2.0",
-  "private": true,
   "type": "module",
   "description": "把 WeKnora 知识库放进 DeepSeek Harness：左侧「知识库」面板、文章管理、检索，以及让 DSH Agent 直接调用知识库与 WeKnora 智能体的工具",
   "keywords": [
@@ -13,6 +12,14 @@
     "rag"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fenlgy/weknora-in-dsh.git"
+  },
+  "homepage": "https://github.com/fenlgy/weknora-in-dsh",
+  "bugs": {
+    "url": "https://github.com/fenlgy/weknora-in-dsh/issues"
+  },
   "main": "./index.js",
   "exports": {
     ".": "./index.js",
