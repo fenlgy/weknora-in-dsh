@@ -1,0 +1,16 @@
+# Dependencies / build output
+node_modules/
+dist/
+
+# Local DSH test home and tooling shims created by the e2e harness
+.dsh-test/
+.bin/
+
+# OS noise
+.DS_Store
+
+# Failure screenshots are debug output, not fixtures
+test/e2e/screenshots/failure.png
+
+# pnpm store created by profile installs
+.pnpm-store/

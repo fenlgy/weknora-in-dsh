@@ -1,0 +1,15 @@
+# The configuration layer this bundle contributes when a profile lists it.
+# Override the row from the profile's own cordis.patch.yml when a deployment
+# should not read its connection settings from the environment. Anything set
+# here is only a fallback: the panel's saved settings (and the tools) live in
+# $DSH_HOME/weknora/config.json and take precedence over these values.
+- insert:
+    - id: weknora
+      name: dsh-weknora
+      config:
+        baseUrl: !!js process.env.WEKNORA_BASE_URL
+        apiKey: !!js process.env.WEKNORA_API_KEY
+        tenantId: !!js process.env.WEKNORA_TENANT_ID
+        agentId: !!js process.env.WEKNORA_AGENT_ID
+        knowledgeBaseIds: !!js (process.env.WEKNORA_KNOWLEDGE_BASE_IDS ?? '').split(',').filter(Boolean)
+        toolPrefix: !!js process.env.WEKNORA_TOOL_PREFIX ?? 'weknora'

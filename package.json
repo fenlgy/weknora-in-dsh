@@ -1,0 +1,49 @@
+{
+  "name": "dsh-weknora",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "把 WeKnora 知识库放进 DeepSeek Harness：左侧「知识库」面板、文章管理、检索，以及让 DSH Agent 直接调用知识库与 WeKnora 智能体的工具",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "weknora",
+    "knowledge-base",
+    "rag"
+  ],
+  "license": "MIT",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-sidebar"
+      ]
+    }
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "e2e:mock": "node test/e2e/mock-weknora.mjs 19090"
+  },
+  "engines": {
+    "node": ">=20.11"
+  }
+}
