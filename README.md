@@ -149,6 +149,11 @@ python3 test/e2e/panel.py "http://127.0.0.1:19402/?token=<printed-token>"
 `test/e2e/panel.py` 会验证：侧边栏入口、知识库列表、文章表格、新建文章、multipart 上传、
 WeKnora 智能体流式问答与引用、检索命中，并截图到 `test/e2e/screenshots/`。
 
+`test/e2e/desktop.py` 则用来检查**正在运行的桌面应用**：它复用桌面窗口自己的登录 Cookie，
+在无头浏览器里加载 `127.0.0.1:19387`，确认侧边栏入口、真实知识库与真实智能体列表都渲染出来
+（只读，不会改动 WeKnora 数据）。Cookie 可用 `sqlite3` 从
+`~/Library/Application Support/@deepseek-ai/dsh-desktop/Cookies` 读出后作为参数传入。
+
 宿主半边的测试覆盖：设置落盘与权限、非法设置拒绝、凭据注入、multipart 原样转发、SSE 透传，
 以及四个工具对真实 HTTP mock 的执行与渲染。
 

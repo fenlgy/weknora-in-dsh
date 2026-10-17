@@ -104,11 +104,11 @@ if (captured !== undefined && reactStack !== undefined) {
     assert.equal(registrations.length, 2);
     const [main, entry] = registrations;
     assert.equal(main.options.name, 'main');
-    assert.equal(main.options.key, 'weknora');
+    assert.equal(main.options.key, 'weknora-kb');
     assert.equal(entry.options.name, 'sidebar.panellist');
-    assert.equal(entry.options.id, 'weknora');
+    assert.equal(entry.options.id, 'weknora-kb');
     assert.equal(entry.options.order, 15);
-    assert.equal(entry.options.locale, 'weknora');
+    assert.equal(entry.options.locale, 'weknora-kb');
     assert.equal(entry.options.label(), '知识库');
     const svg = renderToStaticMarkup(React.createElement(entry.component, { size: 16, active: false }));
     assert.match(svg, /^<svg/);
@@ -116,7 +116,7 @@ if (captured !== undefined && reactStack !== undefined) {
   });
 
   test('registers bilingual dictionaries with the new surfaces', () => {
-    const dict = dictionaries.get('weknora');
+    const dict = dictionaries.get('weknora-kb');
     assert.ok(dict);
     for (const key of [
       'panel',

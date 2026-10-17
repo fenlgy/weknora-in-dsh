@@ -9,8 +9,8 @@ dist/
 # OS noise
 .DS_Store
 
-# Failure screenshots are debug output, not fixtures
-test/e2e/screenshots/failure.png
-
 # pnpm store created by profile installs
 .pnpm-store/
+
+# Failure screenshots are debug output
+test/e2e/screenshots/*failure*.png

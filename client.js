@@ -18,9 +18,9 @@ window.__ModuleLoader__.load({
     const { useCallback, useEffect, useRef, useState } = React;
 
     /** Locale namespace this panel registers its dictionaries under. */
-    const NS = 'weknora';
+    const NS = 'weknora-kb';
     /** Sidebar entry id; also the `main` keyed-slot key that renders the page. */
-    const PANEL_ID = 'weknora';
+    const PANEL_ID = 'weknora-kb';
     /** Prefix route claimed by the host half. */
     const PROXY_SEGMENT = '/weknora';
     /** Settings helper routes the host half owns (never forwarded upstream). */
