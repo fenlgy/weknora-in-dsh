@@ -1,5 +1,11 @@
 # dsh-weknora — 把 WeKnora 知识库放进 DeepSeek Harness
 
+**仓库**：https://github.com/fenlgy/weknora-in-dsh ｜
+**安装**：DSH「插件 → 添加插件」里填上面的 GitHub 地址即可。
+
+![知识库面板](test/e2e/screenshots/02-kbs.png)
+![WeKnora 智能体问答](test/e2e/screenshots/06-agent-chat.png)
+
 一个 DSH 组合包（bundle）：在 **DSH 左侧菜单新增「知识库」入口**，打开后是一套完整的
 [WeKnora](https://github.com/Tencent/WeKnora) 知识库管理面板——浏览知识库、管理文章（上传 / 导入 /
 撰写 / 编辑 / 重新解析 / 删除）、查看解析分块并直接编辑、语义检索，以及**使用 WeKnora 里配置好的
