@@ -101,11 +101,11 @@ if (captured !== undefined && reactStack !== undefined) {
   plugin.apply(ctx);
 
   test('registers the panel page and its sidebar entry', () => {
-    assert.equal(registrations.length, 2);
-    const [main, entry] = registrations;
-    assert.equal(main.options.name, 'main');
+    assert.equal(registrations.length, 4);
+    const main = registrations.find((item) => item.options.name === 'main');
+    const entry = registrations.find((item) => item.options.name === 'sidebar.panellist');
+    assert.ok(main && entry);
     assert.equal(main.options.key, 'weknora-kb');
-    assert.equal(entry.options.name, 'sidebar.panellist');
     assert.equal(entry.options.id, 'weknora-kb');
     assert.equal(entry.options.order, 15);
     assert.equal(entry.options.locale, 'weknora-kb');
@@ -113,6 +113,15 @@ if (captured !== undefined && reactStack !== undefined) {
     const svg = renderToStaticMarkup(React.createElement(entry.component, { size: 16, active: false }));
     assert.match(svg, /^<svg/);
     assert.match(svg, /viewBox="0 0 16 16"/);
+  });
+
+  test('registers the workspace-file upload shortcut in both preview states', () => {
+    const actions = registrations.find((item) => item.options.name === 'sidebar.right.tab.document.actions');
+    const unpreviewable = registrations.find((item) => item.options.name === 'sidebar.right.tab.document.unpreviewable');
+    assert.ok(actions && unpreviewable);
+    assert.equal(actions.options.id, 'weknora-upload');
+    assert.equal(unpreviewable.options.id, 'weknora-upload');
+    assert.equal(actions.options.order, 20);
   });
 
   test('registers bilingual dictionaries with the new surfaces', () => {
@@ -199,6 +208,53 @@ if (captured !== undefined && reactStack !== undefined) {
     const manual = readKnowledge({ id: 'd1', type: 'manual', file_name: 'a.md', parse_status: 'completed' });
     assert.equal(manual.type, 'manual');
     assert.equal(manual.status, 'completed');
+  });
+
+  test('computes workspace-relative upload names', () => {
+    const { workspaceRelativePath, basenameOf } = plugin.__internals;
+    assert.equal(workspaceRelativePath('/tmp/ws', '/tmp/ws/README.md'), 'README.md');
+    assert.equal(workspaceRelativePath('/tmp/ws', '/tmp/ws/docs/a/b.md'), 'docs/a/b.md');
+    assert.equal(workspaceRelativePath('C:\\ws', 'C:\\ws\\docs\\a.md'), 'docs/a.md');
+    assert.equal(workspaceRelativePath('/tmp/ws', '/tmp/ws'), 'ws');
+    assert.equal(workspaceRelativePath('/tmp/ws', '/elsewhere/a.md'), 'a.md');
+    assert.equal(workspaceRelativePath(undefined, '/tmp/ws/a.md'), 'a.md');
+    assert.equal(basenameOf('/a/b/c.txt'), 'c.txt');
+    assert.equal(basenameOf(''), 'workspace-file');
+  });
+
+  test('maps /api/file failures to readable messages', () => {
+    const { workspaceReadError } = plugin.__internals;
+    const t = (key, params) => (params === undefined ? key : `${key}:${JSON.stringify(params)}`);
+    assert.equal(workspaceReadError(413, t), 'workspaceTooLarge');
+    assert.equal(workspaceReadError(403, t), 'workspaceForbidden');
+    assert.equal(workspaceReadError(404, t), 'workspaceMissing');
+    assert.equal(workspaceReadError(500, t), 'workspaceReadFailed:{"status":500}');
+  });
+
+  test('renders the workspace upload shortcut button', () => {
+    const { WorkspaceUploadAction } = plugin.__internals;
+    const dict = dictionaries.get('weknora-kb');
+    const env = { text: (key) => dict.zh[key] ?? key };
+    const html = renderToStaticMarkup(
+      React.createElement(WorkspaceUploadAction, {
+        absolutePath: '/tmp/ws/README.md',
+        sessionId: 'session-1',
+        useSessions: (selector) => selector({ byId: { 'session-1': { cwd: '/tmp/ws' } } }),
+        env,
+        variant: 'icon',
+      }),
+    );
+    assert.match(html, /aria-label="上传到知识库"/);
+    assert.match(html, /aria-haspopup="menu"/);
+    assert.match(html, /aria-expanded="false"/);
+    const empty = renderToStaticMarkup(
+      React.createElement(WorkspaceUploadAction, {
+        absolutePath: '/tmp/ws/README.md',
+        env,
+        variant: 'empty',
+      }),
+    );
+    assert.match(empty, /上传到知识库/);
   });
 
   test('walks dropped directories into relative upload paths', async () => {

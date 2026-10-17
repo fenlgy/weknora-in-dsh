@@ -572,6 +572,56 @@ window.__ModuleLoader__.load({
       }
     }
 
+    /**
+     * Basename of a host path, tolerating both separators.
+     * @param value - Absolute path.
+     * @returns Last path segment.
+     */
+    function basenameOf(value) {
+      const parts = String(value ?? '').split(/[\\/]/).filter((part) => part !== '');
+      return parts.length === 0 ? 'workspace-file' : parts[parts.length - 1];
+    }
+
+    /**
+     * Path of a workspace file relative to the session working directory, so the
+     * uploaded document keeps its directory inside WeKnora. Outside the cwd it
+     * falls back to the bare basename (the absolute path never leaves the client).
+     * @param cwd - Session working directory, when known.
+     * @param absolutePath - Verified file path from the preview slot.
+     * @returns Relative path with forward slashes, or the basename.
+     */
+    function workspaceRelativePath(cwd, absolutePath) {
+      const base = basenameOf(absolutePath);
+      if (typeof cwd !== 'string' || cwd.trim() === '' || typeof absolutePath !== 'string') return base;
+      const slash = (value) => value.replace(/\\/g, '/').replace(/\/+$/, '');
+      const root = slash(cwd);
+      const target = slash(absolutePath);
+      if (target === root) return base;
+      const prefixes = [root];
+      if (/^[a-zA-Z]:/.test(root)) prefixes.push(root.toLowerCase());
+      for (const prefix of prefixes) {
+        const comparable = prefix === root ? target : target.toLowerCase();
+        if (comparable.startsWith(`${prefix}/`)) {
+          const relative = comparable.slice(prefix.length + 1);
+          return relative === '' ? base : relative;
+        }
+      }
+      return base;
+    }
+
+    /**
+     * Human-readable explanation for a failed `/api/file` read.
+     * @param status - HTTP status from the harness file route.
+     * @param t - Locale translator.
+     * @returns Message for the menu.
+     */
+    function workspaceReadError(status, t) {
+      if (status === 413) return t('workspaceTooLarge');
+      if (status === 403) return t('workspaceForbidden');
+      if (status === 404) return t('workspaceMissing');
+      return t('workspaceReadFailed', { status });
+    }
+
     /** Hard ceiling for one drop, so a huge folder cannot queue forever. */
     const MAX_DROP_FILES = 500;
     /** OS bookkeeping files that should never become knowledge. */
@@ -1065,6 +1115,50 @@ window.__ModuleLoader__.load({
         cursor:pointer;text-align:center;padding:14px}
       .wkn-drop:hover{background:var(--dsw-alias-interactive-bg-hover)}
     `;
+
+    /**
+     * Styles for the workspace-file upload shortcut. It renders outside the
+     * knowledge panel, so it carries its own small stylesheet and uses the same
+     * DSH tokens the panel uses.
+     */
+    const HEADER_STYLES = `
+      .wkn-up-root{position:relative;display:inline-flex;align-items:center}
+      .wkn-up-btn{height:24px;min-width:24px;padding:0 4px;border:none;border-radius:9px;
+        background:transparent;color:var(--dsw-alias-label-secondary);display:inline-flex;
+        align-items:center;justify-content:center;gap:4px;font:inherit;font-size:12px;
+        line-height:20px;cursor:pointer}
+      .wkn-up-btn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+      .wkn-up-btn:disabled{opacity:.5;cursor:default}
+      .wkn-up-btn[data-variant="empty"]{height:40px;padding:0 14px;border-radius:12px;
+        font-size:14px;line-height:22px;border:1px solid var(--dsw-alias-border-l3)}
+      .wkn-up-btn[data-variant="empty"]:hover{border-color:var(--dsw-alias-border-l4)}
+      .wkn-up-menu{position:fixed;z-index:120;width:268px;max-height:340px;overflow:auto;
+        padding:6px;border-radius:12px;border:1px solid var(--dsw-alias-border-l2);
+        background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);
+        box-shadow:rgba(0,0,0,.16) 0 0 0 .5px,rgba(0,0,0,.04) 0 3px 8px,rgba(0,0,0,.05) 0 0 20px;
+        font-size:13px;line-height:20px}
+      .wkn-up-label{padding:6px 8px 4px;font-size:12px;line-height:20px;
+        color:var(--dsw-alias-label-tertiary)}
+      .wkn-up-item{display:flex;align-items:center;gap:8px;width:100%;height:32px;padding:0 8px;
+        border:none;border-radius:8px;background:transparent;color:var(--dsw-alias-label-primary);
+        font:inherit;font-size:13px;line-height:20px;cursor:pointer;text-align:left}
+      .wkn-up-item:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}
+      .wkn-up-item:disabled{opacity:.55;cursor:default}
+      .wkn-up-item-name{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .wkn-up-item-meta{flex:0 0 auto;font-size:12px;color:var(--dsw-alias-label-tertiary)}
+      .wkn-up-state{padding:8px;color:var(--dsw-alias-label-tertiary);font-size:13px;
+        line-height:20px;white-space:pre-wrap;overflow-wrap:anywhere}
+      .wkn-up-state[data-kind="error"]{color:var(--dsw-alias-state-error-primary)}
+      .wkn-up-state[data-kind="ok"]{color:var(--dsw-alias-label-secondary)}
+      .wkn-up-foot{display:flex;gap:6px;margin-top:4px;padding-top:6px;
+        border-top:1px solid var(--dsw-alias-border-l1)}
+      .wkn-up-foot button{flex:1 1 auto;height:28px;border:none;border-radius:8px;
+        background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;
+        font-size:12px;cursor:pointer}
+      .wkn-up-foot button:hover{background:var(--dsw-alias-interactive-bg-hover);
+        color:var(--dsw-alias-label-primary)}
+    `;
+
 
     //#endregion
     //#region page
@@ -2444,6 +2538,248 @@ window.__ModuleLoader__.load({
       );
     }
 
+    /** Upload glyph used by the workspace-file shortcut. */
+    const UPLOAD_ICON =
+      'M8 10.5V2.75M8 2.75 5.25 5.5M8 2.75l2.75 2.75M2.75 10.5v1.75c0 .55.45 1 1 1h8.5c.55 0 1-.45 1-1V10.5';
+
+    /**
+     * Workspace-file shortcut: a small header button that only expands a
+     * knowledge-base picker; choosing a library uploads the previewed file
+     * through the same proxy the panel uses.
+     *
+     * Bytes come from the harness's authenticated `/api/file` route, so the
+     * plugin never reads a host path itself and the absolute path is not sent to
+     * WeKnora. Inside the session cwd the relative path rides along as
+     * `fileName`; outside it only the basename is used.
+     *
+     * @param props - Slot props (`absolutePath`, session props) + `env`/`variant`.
+     * @returns Shortcut element.
+     */
+    function WorkspaceUploadAction(props) {
+      const { absolutePath, sessionId, useSessions, env, variant } = props;
+      const t = env.text;
+      const [open, setOpen] = useState(false);
+      const [kbs, setKbs] = useState(null);
+      const [loading, setLoading] = useState(false);
+      const [error, setError] = useState(null);
+      const [busyKb, setBusyKb] = useState(null);
+      const [notice, setNotice] = useState(null);
+      const [pos, setPos] = useState(null);
+      const rootRef = useRef(null);
+      const buttonRef = useRef(null);
+      // Session-scoped slots receive `useSessions`; fall back to the basename
+      // path when a deployment does not provide it.
+      const cwd = typeof useSessions === 'function'
+        ? useSessions((state) => (sessionId === undefined ? undefined : state.byId[sessionId]?.cwd))
+        : undefined;
+
+      const position = useCallback(() => {
+        const button = buttonRef.current;
+        if (button === null || typeof window === 'undefined') return;
+        const rect = button.getBoundingClientRect();
+        const width = 268;
+        setPos({
+          top: Math.round(rect.bottom + 6),
+          left: Math.round(Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8))),
+        });
+      }, []);
+
+      const loadKbs = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+        try {
+          const payload = await call('/api/v1/knowledge-bases');
+          setKbs(readKnowledgeBases(payload));
+        } catch (failure) {
+          setKbs(null);
+          setError(failure instanceof Error ? failure : new Error(String(failure)));
+        } finally {
+          setLoading(false);
+        }
+      }, []);
+
+      const close = useCallback(() => setOpen(false), []);
+
+      const toggle = useCallback(() => {
+        if (open) {
+          close();
+          return;
+        }
+        setOpen(true);
+        setNotice(null);
+        setError(null);
+        position();
+        if (kbs === null && !loading) void loadKbs();
+      }, [close, kbs, loading, loadKbs, open, position]);
+
+      useEffect(() => {
+        if (!open || typeof document === 'undefined') return undefined;
+        const onKey = (event) => {
+          if (event.key === 'Escape') {
+            event.stopPropagation();
+            close();
+          }
+        };
+        const onPointerDown = (event) => {
+          if (rootRef.current !== null && !rootRef.current.contains(event.target)) close();
+        };
+        document.addEventListener('pointerdown', onPointerDown, true);
+        document.addEventListener('keydown', onKey, true);
+        globalThis.addEventListener?.('resize', position);
+        globalThis.addEventListener?.('scroll', position, true);
+        return () => {
+          document.removeEventListener('pointerdown', onPointerDown, true);
+          document.removeEventListener('keydown', onKey, true);
+          globalThis.removeEventListener?.('resize', position);
+          globalThis.removeEventListener?.('scroll', position, true);
+        };
+      }, [close, open, position]);
+
+      const upload = useCallback(
+        async (kb) => {
+          if (busyKb !== null || typeof absolutePath !== 'string') return;
+          setBusyKb(kb.id);
+          setNotice(null);
+          setError(null);
+          try {
+            // Resolve against document.baseURI so a deployment mounted under a
+            // path prefix still reaches the harness file route.
+            const fileUrl = new URL(`api/file?path=${encodeURIComponent(absolutePath)}`, document.baseURI);
+            const response = await fetch(fileUrl.href, { credentials: 'same-origin' });
+            if (!response.ok) {
+              throw Object.assign(new Error(workspaceReadError(response.status, t)), { status: response.status });
+            }
+            const blob = await response.blob();
+            const name = basenameOf(absolutePath);
+            const relative = workspaceRelativePath(cwd, absolutePath);
+            const form = new FormData();
+            form.append('file', new File([blob], name, { type: blob.type || 'application/octet-stream' }), name);
+            if (relative !== name) form.append('fileName', relative);
+            await callForm(`/api/v1/knowledge-bases/${encodeURIComponent(kb.id)}/knowledge/file`, form);
+            setNotice({ kind: 'ok', text: t('workspaceUploaded', { name: kb.name }) });
+            env.notifyUploaded?.({ kbId: kb.id, fileName: relative });
+            if (typeof setTimeout === 'function') setTimeout(() => setOpen(false), 1200);
+          } catch (failure) {
+            const status = failure?.status;
+            if (status === 409) setError(new Error(t('workspaceDuplicate')));
+            else if (status === 403) setError(new Error(t('workspaceNoIngest')));
+            else setError(failure instanceof Error ? failure : new Error(String(failure)));
+          } finally {
+            setBusyKb(null);
+          }
+        },
+        [absolutePath, busyKb, cwd, env, t],
+      );
+
+      if (typeof absolutePath !== 'string' || absolutePath === '') return null;
+
+      const loadingLine = h('div', { key: 'loading', className: 'wkn-up-state' }, t('uploadLoading'));
+      const errorLine = (failure) =>
+        h('div', { key: 'error', className: 'wkn-up-state', 'data-kind': 'error' }, failure.message);
+      const configFoot = h(
+        'div',
+        { key: 'config-foot', className: 'wkn-up-foot' },
+        h('button', { type: 'button', onClick: () => void loadKbs() }, t('uploadRetry')),
+        h(
+          'button',
+          {
+            type: 'button',
+            onClick: () => {
+              close();
+              env.openPanel?.();
+            },
+          },
+          t('uploadOpenPanel'),
+        ),
+      );
+
+      const items = [h('div', { key: 'title', className: 'wkn-up-label' }, t('uploadMenuTitle'))];
+      if (loading) items.push(loadingLine);
+      else if (error !== null && kbs === null) items.push(errorLine(error), configFoot);
+      else if (kbs !== null && kbs.length === 0) {
+        items.push(
+          h('div', { key: 'empty', className: 'wkn-up-state' }, t('uploadNoKbs')),
+          h(
+            'div',
+            { key: 'empty-foot', className: 'wkn-up-foot' },
+            h(
+              'button',
+              {
+                type: 'button',
+                onClick: () => {
+                  close();
+                  env.openPanel?.();
+                },
+              },
+              t('uploadOpenPanel'),
+            ),
+          ),
+        );
+      } else if (kbs !== null) {
+        items.push(
+          ...kbs.map((kb) =>
+            h(
+              'button',
+              {
+                key: kb.id,
+                type: 'button',
+                role: 'menuitem',
+                className: 'wkn-up-item',
+                disabled: busyKb !== null,
+                onClick: () => void upload(kb),
+              },
+              h('span', { className: 'wkn-up-item-name' }, kb.name),
+              h(
+                'span',
+                { className: 'wkn-up-item-meta' },
+                busyKb === kb.id ? t('uploadBusy') : t('uploadCount', { count: kb.count ?? 0 }),
+              ),
+            ),
+          ),
+        );
+      }
+      if (notice !== null) {
+        items.push(
+          h('div', { key: 'notice', className: 'wkn-up-state', 'data-kind': notice.kind }, notice.text),
+        );
+      }
+      if (error !== null && kbs !== null) items.push(errorLine(error));
+
+      return h(
+        'div',
+        { className: 'wkn-up-root', ref: rootRef },
+        h('style', null, HEADER_STYLES),
+        h(
+          'button',
+          {
+            type: 'button',
+            ref: buttonRef,
+            className: 'wkn-up-btn',
+            'data-variant': variant === 'empty' ? 'empty' : undefined,
+            title: t('uploadToKb'),
+            'aria-label': t('uploadToKb'),
+            'aria-haspopup': 'menu',
+            'aria-expanded': open ? 'true' : 'false',
+            disabled: busyKb !== null,
+            onClick: toggle,
+          },
+          h(Glyph, { size: 16, path: UPLOAD_ICON }),
+          variant === 'empty' ? h('span', null, t('uploadToKb')) : null,
+        ),
+        open
+          ? h(
+              'div',
+              {
+                className: 'wkn-up-menu',
+                role: 'menu',
+                style: pos === null ? { top: 0, left: 0 } : { top: `${pos.top}px`, left: `${pos.left}px` },
+              },
+              items,
+            )
+          : null,
+      );
+    }
+
     /**
      * The knowledge-base page rendered in the main area.
      * @param props - Slot props plus the injected environment.
@@ -2611,6 +2947,21 @@ window.__ModuleLoader__.load({
       const reloadDocs = useCallback(async () => {
         if (openKb !== null) await loadDocs(openKb.id, docPage, docKeyword);
       }, [docKeyword, docPage, loadDocs, openKb]);
+
+      // A file uploaded from the workspace shortcut should be visible without a
+      // manual refresh when the panel is already mounted.
+      useEffect(() => {
+        if (typeof globalThis.addEventListener !== 'function') return undefined;
+        const onUploaded = (event) => {
+          void refresh(settings);
+          if (openKb !== null) {
+            const kbId = event?.detail?.kbId;
+            if (kbId === undefined || kbId === openKb.id) void reloadDocs();
+          }
+        };
+        globalThis.addEventListener('weknora:uploaded', onUploaded);
+        return () => globalThis.removeEventListener?.('weknora:uploaded', onUploaded);
+      }, [openKb, refresh, reloadDocs, settings]);
 
       /** Apply the settings form and reconnect. */
       const applySettings = useCallback(async () => {
@@ -3832,6 +4183,10 @@ window.__ModuleLoader__.load({
         readReference,
         parseManualMetadata,
         collectDropEntries,
+        basenameOf,
+        workspaceRelativePath,
+        workspaceReadError,
+        WorkspaceUploadAction,
         readKnowledgeBases,
         formatSize,
         relativeTime,
@@ -4026,6 +4381,21 @@ window.__ModuleLoader__.load({
                 weknoraAgent: 'WeKnora 智能体',
                 sessionFailed: 'WeKnora 创建会话失败：响应中没有 session id',
                 chatError: '智能体返回错误',
+                uploadToKb: '上传到知识库',
+                uploadMenuTitle: '选择目标知识库',
+                uploadLoading: '正在读取知识库…',
+                uploadNoKbs: '还没有可用的知识库。',
+                uploadRetry: '重试',
+                uploadOpenPanel: '打开知识库面板',
+                uploadBusy: '上传中…',
+                uploadCount: '{count} 篇',
+                workspaceUploaded: '已上传到「{name}」',
+                workspaceTooLarge: '文件超过 DSH 读取上限（默认 20 MiB），无法从工作区上传。',
+                workspaceForbidden: '没有权限读取该文件。',
+                workspaceMissing: '文件不存在或已被移动。',
+                workspaceReadFailed: '读取文件失败（HTTP {status}）。',
+                workspaceDuplicate: '该文件已存在于目标知识库（内容重复）。',
+                workspaceNoIngest: 'API Key 缺少 ingest 权限，无法上传文件。',
               },
               en: {
                 panel: 'Knowledge',
@@ -4209,6 +4579,21 @@ window.__ModuleLoader__.load({
                 weknoraAgent: 'WeKnora agent',
                 sessionFailed: 'WeKnora did not return a session id',
                 chatError: 'The agent returned an error',
+                uploadToKb: 'Upload to knowledge base',
+                uploadMenuTitle: 'Choose a knowledge base',
+                uploadLoading: 'Loading knowledge bases…',
+                uploadNoKbs: 'No knowledge base is available.',
+                uploadRetry: 'Retry',
+                uploadOpenPanel: 'Open knowledge panel',
+                uploadBusy: 'Uploading…',
+                uploadCount: '{count} docs',
+                workspaceUploaded: 'Uploaded to "{name}"',
+                workspaceTooLarge: 'This file exceeds the harness read limit (20 MiB by default), so it cannot be uploaded from the workspace.',
+                workspaceForbidden: 'You do not have permission to read this file.',
+                workspaceMissing: 'The file no longer exists or was moved.',
+                workspaceReadFailed: 'Could not read the file (HTTP {status}).',
+                workspaceDuplicate: 'That file already exists in the target knowledge base (identical content).',
+                workspaceNoIngest: 'The API key lacks the ingest capability required to upload files.',
               },
             }),
           'weknora: dictionaries',
@@ -4244,6 +4629,24 @@ window.__ModuleLoader__.load({
             }
             await service.send(message);
           },
+          /** Bring the knowledge panel forward after a workspace upload. */
+          openPanel: () => {
+            try {
+              ctx.get('layout')?.selectPanel?.(PANEL_ID);
+            } catch {
+              /* layout is optional */
+            }
+          },
+          /** Let a mounted panel refresh itself after an external upload. */
+          notifyUploaded: (detail) => {
+            try {
+              if (typeof CustomEvent === 'function') {
+                globalThis.dispatchEvent?.(new CustomEvent('weknora:uploaded', { detail }));
+              }
+            } catch {
+              /* best effort: the upload already succeeded */
+            }
+          },
         };
 
         /** Bind the environment once; slot components only receive slot props. */
@@ -4265,6 +4668,24 @@ window.__ModuleLoader__.load({
               locale: NS,
             },
             PanelIcon,
+          ),
+        );
+
+        // A previewed workspace file gets a small shortcut in its header. The
+        // slot is declared by ui-sidebar-documentpreview, so waiting for the
+        // declaration keeps this plugin loadable in deployments without it.
+        const BoundUploadAction = (slotProps) => h(WorkspaceUploadAction, { ...slotProps, env, variant: 'icon' });
+        const BoundUploadEmpty = (slotProps) => h(WorkspaceUploadAction, { ...slotProps, env, variant: 'empty' });
+        ctx.slots.inject('sidebar.right.tab.document.actions', () =>
+          ctx.slots.register(
+            { name: 'sidebar.right.tab.document.actions', id: 'weknora-upload', order: 20, locale: NS },
+            BoundUploadAction,
+          ),
+        );
+        ctx.slots.inject('sidebar.right.tab.document.unpreviewable', () =>
+          ctx.slots.register(
+            { name: 'sidebar.right.tab.document.unpreviewable', id: 'weknora-upload', order: 20, locale: NS },
+            BoundUploadEmpty,
           ),
         );
       },

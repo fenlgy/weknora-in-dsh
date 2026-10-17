@@ -53,6 +53,19 @@
 
 工具名可用 `toolPrefix` 改名（同时挂两套部署时有用）。
 
+### 工作区文件快捷上传
+
+在 DSH 右侧栏打开工作区文件预览时，标题栏会多出一个「上传到知识库」按钮；不支持预览的文件，空态里也有同款按钮：
+
+1. 点按钮**只展开知识库下拉菜单**，不会直接上传；
+2. 选中目标库后，当前文件经 DSH 已认证的 `/api/file` 读取，再由插件代理以 multipart 上传；
+3. 文件位于当前 session 工作目录内时保留相对路径（如 `docs/a.md`），否则只使用文件名；
+4. 成功后提示并自动关闭菜单；已打开的知识库面板会收到事件并刷新。
+
+只读取当前预览的这个文件，**工作区绝对路径不会发给 WeKnora**。受 DSH `/api/file` 默认 20 MiB 读取上限约束。
+
+![工作区文件一键上传](test/e2e/screenshots/08-workspace-upload.png)
+
 ---
 
 ## 2. 安装
@@ -182,11 +195,20 @@ node test/e2e/mock-weknora.mjs 19090 &
 DSH_HOME=$PWD/.dsh-test node ~/.dsh/profiles/node_modules/@deepseek-ai/dsh/lib/bin.js \
   --profile weknora-test --port 19402 --no-open
 python3 test/e2e/panel.py "http://127.0.0.1:19402/?token=<printed-token>"
+
+# 工作区文件快捷上传（应用需带 SSH_CONNECTION 启动，才会用内置目录选择器）
+SSH_CONNECTION="127.0.0.1 50000 127.0.0.1 22" DSH_HOME=$PWD/.dsh-test \
+  node ~/.dsh/profiles/node_modules/@deepseek-ai/dsh/lib/bin.js \
+  --profile weknora-test --port 19403 --no-open
+python3 test/e2e/workspace_upload.py "http://127.0.0.1:19403/?token=<printed-token>"
 ```
 
 `test/e2e/panel.py` 会验证：侧边栏入口、设置「测试连接」、知识库列表与新建/删除、文章表格、
 新建文章、重新解析、删除、multipart 上传、**拖拽上传（含拖拽悬浮层）**、**文件夹选择上传（保留子目录）**、
 WeKnora 智能体流式问答与引用、检索命中，并截图到 `test/e2e/screenshots/`。
+
+`test/e2e/workspace_upload.py` 会创建/打开工作区文件预览，断言快捷按钮、知识库下拉菜单，并把
+`README.md` 真正上传到 mock 知识库后回面板核对文档行。
 
 `test/e2e/desktop.py` 则用来检查**正在运行的桌面应用**：它复用桌面窗口自己的登录 Cookie，
 在无头浏览器里加载 `127.0.0.1:19387`，确认侧边栏入口、真实知识库与真实智能体列表都渲染出来
