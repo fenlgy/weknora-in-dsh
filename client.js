@@ -2431,24 +2431,27 @@ window.__ModuleLoader__.load({
           const target = active ?? settings;
           if (!target.baseUrl) {
             setShowSettings(true);
-            return;
+            return { ok: false, error: new Error(t('baseMissing')) };
           }
           const ticket = generation.current + 1;
           generation.current = ticket;
           setBusy(true);
           setNote(null);
           try {
-            await loadKnowledgeBases(ticket);
+            const list = await loadKnowledgeBases(ticket);
+            return { ok: true, count: list.length };
           } catch (error) {
+            const reason = error instanceof Error ? error : new Error(String(error));
             if (ticket === generation.current) {
               setKbs([]);
-              fail(error);
+              fail(reason);
             }
+            return { ok: false, error: reason };
           } finally {
             if (ticket === generation.current) setBusy(false);
           }
         },
-        [fail, loadKnowledgeBases, settings],
+        [fail, loadKnowledgeBases, settings, t],
       );
 
       useEffect(() => {
@@ -2529,7 +2532,17 @@ window.__ModuleLoader__.load({
           setOpenKb(null);
           setKbSearch(null);
           setTab('kbs');
-          await refresh(config);
+          // Saving is one thing, reaching the new deployment is another: say
+          // which one failed so "it did not save" is never the only reading.
+          const result = await refresh(config);
+          if (result.ok) {
+            setNote({ kind: 'ok', text: t('settingsSavedConnected', { count: result.count }) });
+          } else {
+            setNote({
+              kind: 'error',
+              text: t('settingsSavedOffline', { error: result.error.message }),
+            });
+          }
         } catch (error) {
           fail(error);
         } finally {
@@ -2987,6 +3000,7 @@ window.__ModuleLoader__.load({
                 ),
                 h('button', { type: 'button', className: 'wkn-btn', onClick: () => setShowSettings(false) }, t('close')),
               ),
+              h('div', { className: 'wkn-hint' }, t('testHint')),
               note ? h('div', { className: 'wkn-note', 'data-kind': note.kind }, note.text) : null,
             )
           : h(
@@ -3678,7 +3692,11 @@ window.__ModuleLoader__.load({
                 connected: '已连接，共 {count} 个知识库。',
                 testConnection: '测试连接',
                 testing: '测试中…',
+                baseMissing: '尚未配置服务地址',
                 testOk: '连接成功，可见 {count} 个知识库。',
+                settingsSavedConnected: '设置已保存并已连接，共 {count} 个知识库。',
+                settingsSavedOffline: '设置已保存到本机，但连接失败：{error}',
+                testHint: '「测试连接」使用已保存的设置；修改表单后请先保存，再测试。',
                 testFailed: '连接失败：{error}',
                 secretStored: '已保存（留空保持不变）',
                 settingsPersistHint: '设置保存在 DSH 本机（$DSH_HOME/weknora/config.json），知识库面板和 DSH Agent 的工具共用同一份配置。',
@@ -3846,7 +3864,11 @@ window.__ModuleLoader__.load({
                 connected: 'Connected — {count} knowledge bases.',
                 testConnection: 'Test connection',
                 testing: 'Testing…',
+                baseMissing: 'No service address configured',
                 testOk: 'Connected — {count} knowledge bases visible.',
+                settingsSavedConnected: 'Saved and connected — {count} knowledge bases.',
+                settingsSavedOffline: 'Saved on this machine, but the connection failed: {error}',
+                testHint: 'Test connection uses the saved settings; save the form first, then test.',
                 testFailed: 'Connection failed: {error}',
                 secretStored: 'stored — leave blank to keep',
                 settingsPersistHint:
