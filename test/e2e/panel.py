@@ -156,6 +156,41 @@ with sync_playwright() as playwright:
             fail(page, "uploaded file is not in the document table")
     page.screenshot(path=str(OUT / "05-uploaded.png"))
 
+    # 5b. Drag-and-drop upload: the overlay must appear on dragover and the
+    # dropped file must land in the open knowledge base.
+    dropped = f"dropped-{RUN}.md"
+    dropped_stem = f"dropped-{RUN}"
+    page.evaluate(
+        """(name) => {
+          const dt = new DataTransfer();
+          dt.items.add(new File(['# 拖拽测试\\n\\n通过拖拽上传的文件。'], name, {type: 'text/markdown'}));
+          const root = document.querySelector('.wkn-root');
+          for (const type of ['dragenter', 'dragover']) {
+            root.dispatchEvent(new DragEvent(type, {bubbles: true, cancelable: true, dataTransfer: dt}));
+          }
+        }""",
+        dropped,
+    )
+    page.wait_for_timeout(400)
+    if page.locator(".wkn-drop-overlay").count() == 0:
+        fail(page, "drag overlay did not appear on dragover")
+    page.screenshot(path=str(OUT / "05b-dragover.png"))
+    page.evaluate(
+        """(name) => {
+          const dt = new DataTransfer();
+          dt.items.add(new File(['# 拖拽测试\\n\\n通过拖拽上传的文件。'], name, {type: 'text/markdown'}));
+          const root = document.querySelector('.wkn-root');
+          root.dispatchEvent(new DragEvent('drop', {bubbles: true, cancelable: true, dataTransfer: dt}));
+        }""",
+        dropped,
+    )
+    page.wait_for_timeout(3000)
+    if dropped_stem not in panel.inner_text():
+        fail(page, "dropped file is not in the document table")
+    if page.locator(".wkn-drop-overlay").count() != 0:
+        fail(page, "drop overlay did not disappear after drop")
+    page.screenshot(path=str(OUT / "05c-dropped.png"))
+
     # 6. Chat with the WeKnora agent.
     page.get_by_role("button", name="智能体", exact=True).click()
     page.wait_for_timeout(2000)

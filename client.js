@@ -573,6 +573,17 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Whether a drag carries OS files (not text or an internal element drag).
+     * @param event - Drag event.
+     * @returns True when the transfer has a Files entry.
+     */
+    function hasFileDrag(event) {
+      const types = event?.dataTransfer?.types;
+      if (types === undefined || types === null) return false;
+      return Array.from(types).includes('Files');
+    }
+
+    /**
      * Normalize `GET /agents` rows into the picker's records.
      * @param payload - Parsed reply.
      * @returns Agent records.
@@ -797,7 +808,7 @@ window.__ModuleLoader__.load({
     const STYLES = `
       /* Values follow the DSH design tokens/primitives: 13px body, 20px page
          title, 12px control radius, near-black primary buttons, 28px modal. */
-      .wkn-root{height:100%;display:flex;flex-direction:column;min-height:0;
+      .wkn-root{position:relative;height:100%;display:flex;flex-direction:column;min-height:0;
         background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);
         font-size:13px;line-height:20px}
       .wkn-head{display:flex;align-items:center;gap:12px;flex:0 0 auto;
@@ -938,6 +949,14 @@ window.__ModuleLoader__.load({
         border:1px solid var(--dsw-alias-border-l3);color:var(--dsw-alias-label-tertiary)}
       .wkn-empty{color:var(--dsw-alias-label-tertiary);margin:16px 0;font-size:13px;line-height:20px}
       .wkn-crumbs{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+      .wkn-drop-overlay{position:absolute;inset:0;z-index:70;pointer-events:none;display:flex;
+        align-items:center;justify-content:center;padding:24px;
+        background:color-mix(in srgb,var(--dsw-alias-bg-base) 80%,transparent)}
+      .wkn-drop-card{display:flex;flex-direction:column;gap:6px;align-items:center;justify-content:center;
+        width:100%;height:100%;border:2px dashed #4176e6;border-radius:20px;
+        background:color-mix(in srgb,#4176e6 4%,transparent);color:var(--dsw-alias-label-primary)}
+      .wkn-drop-title{font-size:16px;line-height:24px;font-weight:500}
+      .wkn-drop-inline{white-space:nowrap;color:var(--dsw-alias-label-tertiary)}
       .wkn-modal-backdrop{position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;
         padding:24px;background:var(--dsw-alias-bg-mask-2,#0003)}
       .wkn-modal{width:min(720px,94vw);max-height:86vh;display:flex;flex-direction:column;border-radius:28px;
@@ -2409,6 +2428,10 @@ window.__ModuleLoader__.load({
       /** Human-readable progress while files upload. */
       const [uploading, setUploading] = useState(null);
       const uploadInput = useRef(null);
+      /** True while files are dragged over the open knowledge base. */
+      const [dragging, setDragging] = useState(false);
+      /** enter/leave nesting depth, so child boundaries do not flicker the overlay. */
+      const dragDepth = useRef(0);
 
       const generation = useRef(0);
       const configured = Boolean(settings.baseUrl);
@@ -2754,6 +2777,63 @@ window.__ModuleLoader__.load({
         [openKb, refresh, reloadDocs, settings, t],
       );
 
+      /** A dialog covers the panel, so a drop there must not upload by surprise. */
+      const dialogOpen = showSettings || showCreateKb || articleEditor !== null || showUrlImport;
+      /** Files can only land in the open knowledge base while it is idle. */
+      const canDropFiles = openKb !== null && !busy && !dialogOpen;
+
+      const onDragEnter = useCallback(
+        (event) => {
+          if (!hasFileDrag(event)) return;
+          event.preventDefault();
+          if (dialogOpen) return;
+          dragDepth.current += 1;
+          if (canDropFiles) setDragging(true);
+        },
+        [canDropFiles, dialogOpen],
+      );
+
+      const onDragOver = useCallback(
+        (event) => {
+          if (!hasFileDrag(event)) return;
+          // Always prevent the browser's default "open the dropped file" behavior.
+          event.preventDefault();
+          if (event.dataTransfer !== null && event.dataTransfer !== undefined) {
+            event.dataTransfer.dropEffect = canDropFiles ? 'copy' : 'none';
+          }
+        },
+        [canDropFiles],
+      );
+
+      const onDragLeave = useCallback((event) => {
+        if (!hasFileDrag(event)) return;
+        event.preventDefault();
+        dragDepth.current = Math.max(0, dragDepth.current - 1);
+        if (dragDepth.current === 0) setDragging(false);
+      }, []);
+
+      const onDrop = useCallback(
+        (event) => {
+          if (!hasFileDrag(event)) return;
+          event.preventDefault();
+          dragDepth.current = 0;
+          setDragging(false);
+          if (dialogOpen) return;
+          const files = Array.from(event.dataTransfer?.files ?? []);
+          if (files.length === 0) return;
+          if (openKb === null) {
+            setNote({ kind: 'error', text: t('dropOpenKbFirst') });
+            return;
+          }
+          if (busy) {
+            setNote({ kind: 'error', text: t('dropBusy') });
+            return;
+          }
+          void uploadFiles(files);
+        },
+        [busy, dialogOpen, openKb, t, uploadFiles],
+      );
+
       /** Create or update a manual (Markdown) article, then refresh the table. */
       const submitArticle = useCallback(
         async (values) => {
@@ -2926,7 +3006,13 @@ window.__ModuleLoader__.load({
 
       return h(
         'div',
-        { className: 'wkn-root' },
+        {
+          className: 'wkn-root',
+          onDragEnter,
+          onDragOver,
+          onDragLeave,
+          onDrop,
+        },
         h('style', null, STYLES),
         h(
           'div',
@@ -3460,6 +3546,7 @@ window.__ModuleLoader__.load({
                                 t('search'),
                               ),
                               h('div', { className: 'wkn-spacer' }),
+                              h('span', { className: 'wkn-hint wkn-drop-inline' }, t('dropInline')),
                               h('span', { className: 'wkn-meta' }, t('docCount', { count: docs === null ? 0 : docs.total })),
                             ),
                             h('input', {
@@ -3558,6 +3645,18 @@ window.__ModuleLoader__.load({
                     ),
               ),
             ),
+        dragging && openKb !== null && !dialogOpen
+          ? h(
+              'div',
+              { className: 'wkn-drop-overlay' },
+              h(
+                'div',
+                { className: 'wkn-drop-card' },
+                h('div', { className: 'wkn-drop-title' }, t('dropTitle')),
+                h('div', { className: 'wkn-hint' }, t('dropHint', { name: openKb.name })),
+              ),
+            )
+          : null,
         showCreateKb
           ? h(KnowledgeBaseDialog, {
               t,
@@ -3752,6 +3851,11 @@ window.__ModuleLoader__.load({
                 deleteKb: '删除知识库',
                 uploading: '正在上传 {index}/{total}：{name}',
                 uploadDone: '已上传 {count} 个文件，解析在 WeKnora 后台进行。',
+                dropTitle: '松开即可上传',
+                dropHint: '文件会直接上传到「{name}」，支持一次拖入多个',
+                dropInline: '可将文件拖到此区域上传',
+                dropOpenKbFirst: '请先打开一个知识库，再把文件拖进来。',
+                dropBusy: '正在上传或加载，请稍后再拖入文件。',
                 uploadPartial: '成功上传 {count} 个文件，其余失败：',
                 articleCreateTitle: '新建文章',
                 articleEditTitle: '编辑文章',
@@ -3926,6 +4030,11 @@ window.__ModuleLoader__.load({
                 deleteKb: 'Delete knowledge base',
                 uploading: 'Uploading {index}/{total}: {name}',
                 uploadDone: 'Uploaded {count} file(s); WeKnora parses them in the background.',
+                dropTitle: 'Drop to upload',
+                dropHint: 'Files go straight into "{name}" — drop several at once',
+                dropInline: 'Drag files here to upload',
+                dropOpenKbFirst: 'Open a knowledge base first, then drop files into it.',
+                dropBusy: 'An upload or reload is in progress — try dropping again in a moment.',
                 uploadPartial: 'Uploaded {count} file(s); the rest failed:',
                 articleCreateTitle: 'New article',
                 articleEditTitle: 'Edit article',
