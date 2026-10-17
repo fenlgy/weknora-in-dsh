@@ -80,9 +80,31 @@ if (captured !== undefined && reactStack !== undefined) {
   /** Slot registrations performed by the plugin. */
   const registrations = [];
   const dictionaries = new Map();
+  /** @-menu sources registered through `ctx.inputTriggers`. */
+  const triggerSources = [];
+  /** User-text rules registered through `ctx.uiConversation`. */
+  const userTextRules = [];
+  const mentionCtx = {
+    effect: (factory) => factory(),
+    uiConversation: {
+      userText: {
+        register: (rule) => {
+          userTextRules.push(rule);
+          return () => {};
+        },
+      },
+    },
+    inputTriggers: {
+      registerSource: (source) => {
+        triggerSources.push(source);
+        return () => {};
+      },
+    },
+  };
   const ctx = {
     effect: (factory) => factory(),
     get: () => undefined,
+    inject: (_deps, callback) => callback(mentionCtx),
     locale: {
       register: (ns, dict) => {
         dictionaries.set(ns, dict);
@@ -101,7 +123,7 @@ if (captured !== undefined && reactStack !== undefined) {
   plugin.apply(ctx);
 
   test('registers the panel page and its sidebar entry', () => {
-    assert.equal(registrations.length, 4);
+    assert.equal(registrations.length, 5);
     const main = registrations.find((item) => item.options.name === 'main');
     const entry = registrations.find((item) => item.options.name === 'sidebar.panellist');
     assert.ok(main && entry);
@@ -156,7 +178,7 @@ if (captured !== undefined && reactStack !== undefined) {
   });
 
   test('shows the loading state before the settings arrive', () => {
-    const page = registrations[0].component;
+    const page = registrations.find((item) => item.options.name === 'main').component;
     const html = renderToStaticMarkup(React.createElement(page, {}));
     assert.match(html, /加载中/);
   });
@@ -255,6 +277,52 @@ if (captured !== undefined && reactStack !== undefined) {
       }),
     );
     assert.match(empty, /上传到知识库/);
+  });
+
+  test('registers a WeKnora source and rule into the @ pipeline', () => {
+    assert.equal(triggerSources.length, 1);
+    const source = triggerSources[0];
+    assert.equal(source.trigger, '@');
+    assert.equal(source.name, 'weknora-kb');
+    const rule = userTextRules.find((entry) => entry.id === 'weknora-kb');
+    assert.ok(rule, 'a user-text rule must render sent mentions');
+    const node = registrations.find((item) => item.options.name === 'conversation.user.text.node');
+    assert.ok(node);
+    assert.equal(node.options.key, 'weknora-kb');
+  });
+
+  test('formats and parses canonical knowledge-base mentions', () => {
+    const { formatKnowledgeBaseMention, KB_USER_TEXT_RULE } = plugin.__internals;
+    const mention = formatKnowledgeBaseMention('kb/1', '产品 [文档]');
+    assert.equal(mention, '@[产品 文档](weknora:kb/kb%2F1)');
+    const text = `请看 ${mention} 的内容`;
+    const node = KB_USER_TEXT_RULE.match(text, 0);
+    assert.ok(node);
+    assert.equal(node.data.label, '产品 文档');
+    assert.equal(node.data.id, 'kb/1');
+    assert.equal(text.slice(node.start, node.end), mention);
+  });
+
+  test('filters knowledge-base candidates for the @ query', () => {
+    const { knowledgeBaseCandidates } = plugin.__internals;
+    const t = (key, params) => (params === undefined ? key : `${key}:${params.count}`);
+    const items = [
+      { id: 'kb-1', name: '产品文档', description: '退款', count: 3 },
+      { id: 'kb-2', name: '售后 FAQ', description: '', count: 1 },
+    ];
+    assert.equal(knowledgeBaseCandidates(items, '', t).length, 2);
+    const filtered = knowledgeBaseCandidates(items, '退款', t);
+    assert.equal(filtered.length, 1);
+    assert.equal(filtered[0].name, '产品文档');
+    assert.equal(filtered[0].description, 'mentionCount:3');
+    const html = renderToStaticMarkup(
+      React.createElement(plugin.__internals.KnowledgeBaseMentionChip, {
+        node: { data: { label: '产品文档', id: 'kb-1' } },
+        raw: '@[产品文档](weknora:kb/kb-1)',
+      }),
+    );
+    assert.match(html, /产品文档/);
+    assert.match(html, /wkn-kb-mention/);
   });
 
   test('walks dropped directories into relative upload paths', async () => {

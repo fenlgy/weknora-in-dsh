@@ -185,6 +185,7 @@ window.__ModuleLoader__.load({
         method,
         headers,
         body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+        ...(opts.signal === undefined ? {} : { signal: opts.signal }),
       });
       return readReply(response, { method, path });
     }
@@ -2538,6 +2539,98 @@ window.__ModuleLoader__.load({
       );
     }
 
+    /** Canonical prefix the host parser and the @ menu share. */
+    const KB_MENTION_PREFIX = 'weknora:kb/';
+    /** User-text rule matching a canonical WeKnora mention in sent messages. */
+    const KB_USER_TEXT_RULE = {
+      id: 'weknora-kb',
+      order: 25,
+      match(text, from) {
+        const pattern = /@\[([^\]\n]+)\]\(weknora:kb\/([^)\s]+)\)/gu;
+        pattern.lastIndex = from;
+        const match = pattern.exec(text);
+        if (match === null) return undefined;
+        let id = match[2];
+        try {
+          id = decodeURIComponent(id);
+        } catch {
+          /* keep the literal segment */
+        }
+        return {
+          id: 'weknora-kb',
+          start: match.index,
+          end: match.index + match[0].length,
+          data: { label: match[1], id },
+        };
+      },
+    };
+
+    /**
+     * Canonical mention text inserted by the @ menu and read back by the host.
+     * @param id - Knowledge-base id.
+     * @param label - Display name (brackets/newlines are not representable).
+     * @returns `@[name](weknora:kb/<encoded id>)`.
+     */
+    function formatKnowledgeBaseMention(id, label) {
+      const safe = String(label ?? '')
+        .replace(/[\]\[\r\n]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      return `@[${safe === '' ? '知识库' : safe}](${KB_MENTION_PREFIX}${encodeURIComponent(String(id))})`;
+    }
+
+    /**
+     * Project knowledge bases into trigger-menu rows for the current query.
+     * @param items - Knowledge bases from the host.
+     * @param query - Text after the `@` trigger.
+     * @param t - Locale translator.
+     * @returns Trigger menu rows.
+     */
+    function knowledgeBaseCandidates(items, query, t) {
+      const needle = String(query ?? '').trim().toLowerCase();
+      return items
+        .filter((kb) => {
+          if (needle === '') return true;
+          return (
+            kb.name.toLowerCase().includes(needle) ||
+            String(kb.id).toLowerCase().includes(needle) ||
+            (kb.description ?? '').toLowerCase().includes(needle)
+          );
+        })
+        .slice(0, 12)
+        .map((kb) => ({
+          name: kb.name,
+          description: t('mentionCount', { count: kb.count ?? 0 }),
+          icon: PanelIcon,
+          section: t('mentionSection'),
+          value: JSON.stringify({ id: kb.id, name: kb.name }),
+        }));
+    }
+
+    /**
+     * Non-interactive chip for a WeKnora mention in a sent user message.
+     * @param props - `{node, raw}` from the user-text renderer.
+     * @returns Chip element.
+     */
+    function KnowledgeBaseMentionChip({ node, raw }) {
+      return h(
+        'span',
+        { className: 'wkn-kb-mention', title: raw },
+        h('style', null, KB_MENTION_STYLES),
+        h(Glyph, { size: 12, path: 'M3.4 3.6c0-1.05 2.06-1.9 4.6-1.9s4.6.85 4.6 1.9v8.8c0 1.05-2.06 1.9-4.6 1.9s-4.6-.85-4.6-1.9z' }),
+        h('span', { className: 'wkn-kb-mention-label' }, node?.data?.label ?? ''),
+      );
+    }
+
+    /** Chip styling for a sent WeKnora mention (rendered outside the panel). */
+    const KB_MENTION_STYLES = `
+      .wkn-kb-mention{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 6px;
+        border-radius:6px;background:var(--dsw-alias-interactive-bg-hover);
+        color:var(--dsw-alias-label-primary);font-size:12px;line-height:18px;vertical-align:baseline}
+      .wkn-kb-mention svg{flex:0 0 auto;color:var(--dsw-alias-label-secondary)}
+      .wkn-kb-mention-label{max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    `;
+
     /** Upload glyph used by the workspace-file shortcut. */
     const UPLOAD_ICON =
       'M8 10.5V2.75M8 2.75 5.25 5.5M8 2.75l2.75 2.75M2.75 10.5v1.75c0 .55.45 1 1 1h8.5c.55 0 1-.45 1-1V10.5';
@@ -4187,6 +4280,10 @@ window.__ModuleLoader__.load({
         workspaceRelativePath,
         workspaceReadError,
         WorkspaceUploadAction,
+        KnowledgeBaseMentionChip,
+        KB_USER_TEXT_RULE,
+        formatKnowledgeBaseMention,
+        knowledgeBaseCandidates,
         readKnowledgeBases,
         formatSize,
         relativeTime,
@@ -4389,6 +4486,8 @@ window.__ModuleLoader__.load({
                 uploadOpenPanel: '打开知识库面板',
                 uploadBusy: '上传中…',
                 uploadCount: '{count} 篇',
+                mentionSection: 'WeKnora 知识库',
+                mentionCount: '{count} 篇',
                 workspaceUploaded: '已上传到「{name}」',
                 workspaceTooLarge: '文件超过 DSH 读取上限（默认 20 MiB），无法从工作区上传。',
                 workspaceForbidden: '没有权限读取该文件。',
@@ -4587,6 +4686,8 @@ window.__ModuleLoader__.load({
                 uploadOpenPanel: 'Open knowledge panel',
                 uploadBusy: 'Uploading…',
                 uploadCount: '{count} docs',
+                mentionSection: 'WeKnora knowledge bases',
+                mentionCount: '{count} docs',
                 workspaceUploaded: 'Uploaded to "{name}"',
                 workspaceTooLarge: 'This file exceeds the harness read limit (20 MiB by default), so it cannot be uploaded from the workspace.',
                 workspaceForbidden: 'You do not have permission to read this file.',
@@ -4648,6 +4749,85 @@ window.__ModuleLoader__.load({
             }
           },
         };
+
+        /** Knowledge-base cache for the `@` source (menu queries run per keystroke). */
+        let mentionCache = { at: 0, items: null, pending: null };
+        const loadMentionKbs = async () => {
+          if (mentionCache.items !== null && Date.now() - mentionCache.at < 60_000) return mentionCache.items;
+          if (mentionCache.pending !== null) return mentionCache.pending;
+          mentionCache.pending = call('/api/v1/knowledge-bases')
+            .then((payload) => {
+              const items = readKnowledgeBases(payload);
+              mentionCache.items = items;
+              mentionCache.at = Date.now();
+              return items;
+            })
+            .finally(() => {
+              mentionCache.pending = null;
+            });
+          return mentionCache.pending;
+        };
+
+        /** `@` source listing WeKnora knowledge bases beside files and sessions. */
+        const mentionSource = {
+          trigger: '@',
+          name: 'weknora-kb',
+          showGroupTitle: false,
+          async candidates(_session, { query, signal }) {
+            try {
+              const items = await loadMentionKbs();
+              if (signal?.aborted) return [];
+              return knowledgeBaseCandidates(items, query, text);
+            } catch {
+              // A missing deployment should not take the whole @ menu down.
+              return [];
+            }
+          },
+          onPick({ candidate }) {
+            let value;
+            try {
+              value = JSON.parse(candidate.value);
+            } catch {
+              return undefined;
+            }
+            if (value === null || typeof value !== 'object' || typeof value.id !== 'string') return undefined;
+            const ref = formatKnowledgeBaseMention(value.id, value.name);
+            return {
+              insert: {
+                source: 'weknora-kb',
+                ref,
+                label: value.name,
+                appearance: 'folder',
+                clipboardText: ref,
+              },
+            };
+          },
+          openReference() {
+            return false;
+          },
+          codec: {
+            clipboardText: (ref) => ref,
+            serialize: (ref) => Promise.resolve(ref),
+          },
+        };
+
+        // Render the canonical mention as a chip in sent messages.
+        ctx.slots.inject('conversation.user.text.node', () =>
+          ctx.slots.register(
+            { name: 'conversation.user.text.node', key: 'weknora-kb', priority: 100, locale: NS },
+            KnowledgeBaseMentionChip,
+          ),
+        );
+        ctx.inject(['inputTriggers', 'uiConversation'], (mentionCtx) => {
+          mentionCtx.effect(
+            () => mentionCtx.uiConversation.userText.register(KB_USER_TEXT_RULE),
+            'weknora: @ mention rule',
+          );
+          mentionCtx.effect(
+            () => mentionCtx.inputTriggers.registerSource(mentionSource),
+            'weknora: @ mention source',
+          );
+        });
 
         /** Bind the environment once; slot components only receive slot props. */
         const BoundPage = (slotProps) => h(WeKnoraPage, { ...slotProps, env });

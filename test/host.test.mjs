@@ -359,6 +359,40 @@ test('the ask tool uses the configured WeKnora agent and keeps citations', async
   assert.match(rendered, /引用来源/);
 });
 
+test('extracts knowledge-base mentions from user text', () => {
+  const ids = __internals.knowledgeBaseIdsFromText(
+    'Look at @[产品文档](weknora:kb/kb-a) and @[售后 FAQ](weknora:kb/kb-b%2F2), then @[again](weknora:kb/kb-a).',
+  );
+  assert.deepEqual(ids, ['kb-a', 'kb-b/2']);
+  assert.deepEqual(__internals.knowledgeBaseIdsFromText('no mentions here'), []);
+});
+
+test('reads mentions from the latest direct user message only', () => {
+  const events = new Map([
+    [1, { type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: '@[old](weknora:kb/kb-old)' }] } }],
+    [2, { type: 'user/message', data: { source: { kind: 'tool' }, content: [{ type: 'text', text: '@[ignored](weknora:kb/kb-tool)' }] } }],
+    [3, { type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'compare @[new](weknora:kb/kb-new)' }] } }],
+  ]);
+  const agent = { session: { surface: { nodes: [1, 2, 3] }, eventAt: (seq) => events.get(seq) } };
+  assert.deepEqual(__internals.referencedKnowledgeBaseIds(agent), ['kb-new']);
+  assert.deepEqual(__internals.referencedKnowledgeBaseIds(undefined), []);
+});
+
+test('the search tool applies a knowledge-base mention as its scope', async () => {
+  seen.length = 0;
+  const events = new Map([
+    [1, { type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: '@[产品文档](weknora:kb/kb-mentioned)' }] } }],
+  ]);
+  const agent = { session: { surface: { nodes: [1] }, eventAt: (seq) => events.get(seq) } };
+  const tools = mount(undefined).tools;
+  const tool = tools.find((entry) => entry.name === 'weknora_search');
+  await tool.execute({ query: '退款' }, { agent });
+  const forwarded = seen.find((request) => request.url === '/api/v1/knowledge-search');
+  assert.ok(forwarded, 'search request was forwarded');
+  const body = JSON.parse(forwarded.body.toString('utf8'));
+  assert.deepEqual(body.knowledge_base_ids, ['kb-mentioned']);
+});
+
 test('normalizes base URLs and clips oversized passages', () => {
   assert.equal(__internals.normalizeBase('http://host:8080/api/v1/'), 'http://host:8080');
   assert.equal(__internals.normalizeBase('https://host/kb/api/v1'), 'https://host/kb');

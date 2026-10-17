@@ -864,6 +864,63 @@ export function clip(value, limit) {
   return { text: `${characters.slice(0, limit).join('')}…`, truncated: true };
 }
 
+/** Canonical client-side mention for a WeKnora knowledge base. */
+const KB_MENTION_PATTERN = /@\[[^\]\n]*\]\(weknora:kb\/([^)\s]+)\)/gu;
+
+/**
+ * Extract the knowledge-base ids mentioned in one user message.
+ * The client inserts `@[name](weknora:kb/<encoded id>)`; decoding tolerates a
+ * malformed escape by keeping the literal segment.
+ * @param text - Message text.
+ * @returns Unique ids in first-mention order.
+ */
+export function knowledgeBaseIdsFromText(text) {
+  if (typeof text !== 'string' || text === '') return [];
+  const ids = [];
+  for (const match of text.matchAll(KB_MENTION_PATTERN)) {
+    let id = match[1];
+    try {
+      id = decodeURIComponent(id);
+    } catch {
+      /* keep the literal segment */
+    }
+    if (id !== '' && !ids.includes(id)) ids.push(id);
+  }
+  return ids;
+}
+
+/**
+ * Read the knowledge-base mentions of the latest direct user message.
+ *
+ * DSH records a `user/message` event whose `data.source.kind` is `user` for text
+ * the operator typed; injected context uses other source kinds. Only the latest
+ * direct message scopes the turn, so an older mention cannot leak into a later
+ * question.
+ * @param agent - Tool-call agent (absent on some programmatic dispatches).
+ * @returns Referenced ids, or an empty array.
+ */
+export function referencedKnowledgeBaseIds(agent) {
+  try {
+    const session = agent?.session;
+    const nodes = session?.surface?.nodes;
+    if (nodes === undefined || typeof session.eventAt !== 'function') return [];
+    const sequence = Array.from(nodes);
+    for (let index = sequence.length - 1; index >= 0; index -= 1) {
+      const event = session.eventAt(sequence[index]);
+      if (event?.type !== 'user/message' || event.data?.source?.kind !== 'user') continue;
+      const content = Array.isArray(event.data.content) ? event.data.content : [];
+      const text = content
+        .filter((block) => block?.type === 'text' && typeof block.text === 'string')
+        .map((block) => block.text)
+        .join('\n');
+      return knowledgeBaseIdsFromText(text);
+    }
+  } catch {
+    /* a session shape this build does not expose: fall back to configured scope */
+  }
+  return [];
+}
+
 /**
  * Read a string argument without trusting its shape.
  * @param args - Model arguments.
@@ -947,8 +1004,9 @@ async function listKnowledgeBases(config, signal) {
  * @param signal - Cancellation.
  * @returns Ids to search.
  */
-async function resolveScope(config, requested, signal) {
+async function resolveScope(config, requested, signal, referenced = []) {
   if (requested.length > 0) return requested;
+  if (referenced.length > 0) return referenced;
   if (config.knowledgeBaseIds.length > 0) return config.knowledgeBaseIds;
   const listed = await listKnowledgeBases(config, signal);
   return listed.knowledge_bases.map((kb) => kb.id).filter((id) => id !== '');
@@ -1019,7 +1077,8 @@ export function createTools(getConfig) {
       description:
         'Search the configured WeKnora knowledge bases and return matching passages verbatim (hybrid vector + keyword retrieval). '
         + 'Use it to ground answers in the organization\'s own documents. Every hit carries a knowledge_id that '
-        + `${name('read_document')} accepts.`,
+        + `${name('read_document')} accepts. When the user message contains an `
+        + '`@[name](weknora:kb/<id>)` mention, this tool automatically restricts itself to that knowledge base.',
       parameters: {
         type: 'object',
         additionalProperties: false,
@@ -1079,7 +1138,12 @@ export function createTools(getConfig) {
         const live = getConfig();
         const query = argString(args, 'query');
         if (query === undefined) throw new Error(`${name('search')}: query 不能为空`);
-        const knowledgeBaseIds = await resolveScope(live, argStringArray(args, 'knowledge_base_ids'), exec?.signal);
+        const knowledgeBaseIds = await resolveScope(
+          live,
+          argStringArray(args, 'knowledge_base_ids'),
+          exec?.signal,
+          referencedKnowledgeBaseIds(exec?.agent),
+        );
         if (knowledgeBaseIds.length === 0) throw new Error('当前凭据看不到任何知识库，请检查 API Key 权限。');
         const limit = Math.min(
           argInt(args, 'max_results', live.maxResults, live.maxResults),
@@ -1188,7 +1252,8 @@ export function createTools(getConfig) {
       description:
         'Ask WeKnora a question and return the answer produced by the agent configured in WeKnora, with its citations. '
         + 'Use it for broad questions that span several documents, or when the user wants the WeKnora-side agent\'s judgement. '
-        + 'Unlike search, a model runs on the server, so it is slower and returns a conclusion rather than raw evidence.',
+        + 'Unlike search, a model runs on the server, so it is slower and returns a conclusion rather than raw evidence. '
+        + 'An `@[name](weknora:kb/<id>)` mention in the user message scopes the answer to that knowledge base automatically.',
       parameters: {
         type: 'object',
         additionalProperties: false,
@@ -1249,13 +1314,14 @@ export function createTools(getConfig) {
           sessionId = typeof created?.data?.id === 'string' ? created.data.id : '';
           if (sessionId === '') throw new Error('WeKnora 创建会话失败：响应中没有 session id');
         }
+        const requestedScope = argStringArray(args, 'knowledge_base_ids');
+        const mentionedScope = referencedKnowledgeBaseIds(exec?.agent);
+        const scope = requestedScope.length > 0 ? requestedScope : mentionedScope;
         const body = {
           query,
           agent_enabled: true,
           ...(agentId === undefined ? {} : { agent_id: agentId }),
-          ...(argStringArray(args, 'knowledge_base_ids').length === 0
-            ? {}
-            : { knowledge_base_ids: argStringArray(args, 'knowledge_base_ids') }),
+          ...(scope.length === 0 ? {} : { knowledge_base_ids: scope }),
         };
         const result = await chatOnce(
           live,
@@ -1294,6 +1360,8 @@ export function createTools(getConfig) {
 
 /** Test seam: pure helpers the offline tests drive directly. */
 export const __internals = {
+  knowledgeBaseIdsFromText,
+  referencedKnowledgeBaseIds,
   normalizeBase,
   readDefaults,
   effectiveConfig,
