@@ -949,9 +949,8 @@ window.__ModuleLoader__.load({
       .wkn-btn:disabled{opacity:.45;cursor:default}
       .wkn-btn[data-variant="primary"]{background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-base)}
       .wkn-btn[data-variant="primary"]:hover:not(:disabled){background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-base);filter:none;opacity:.9}
-      .wkn-btn[data-size="sm"]{height:28px;padding:0 8px;border-radius:8px;font-size:13px;line-height:20px}
       .wkn-chips{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 4px}
-      .wkn-chip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:999px;
+      .wkn-chip{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:999px;
         border:1px solid var(--dsw-alias-border-l3);background:transparent;color:var(--dsw-alias-label-secondary);
         font:inherit;font-size:13px;line-height:20px;cursor:pointer;max-width:100%}
       .wkn-chip:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
@@ -1028,7 +1027,7 @@ window.__ModuleLoader__.load({
         background:var(--dsw-alias-bg-layer-1)}
       .wkn-img{display:block;max-width:100%;max-height:520px;border-radius:12px;
         border:1px solid var(--dsw-alias-border-l2)}
-      .wkn-link{display:inline-flex;align-items:center;height:28px;padding:0 8px;border-radius:8px;font-size:13px;
+      .wkn-link{display:inline-flex;align-items:center;height:32px;padding:0 12px;border-radius:12px;font-size:13px;
         border:none;color:var(--dsw-alias-label-secondary);text-decoration:none;white-space:nowrap}
       .wkn-link:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
       .wkn-stats{display:flex;gap:16px;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px;align-items:center}
@@ -1076,9 +1075,7 @@ window.__ModuleLoader__.load({
       .wkn-modal-title{font-size:16px;line-height:24px;font-weight:500}
       .wkn-modal-body{padding:16px 24px;overflow:auto;display:flex;flex-direction:column;gap:12px}
       .wkn-modal-foot{display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:16px 24px 24px}
-      .wkn-modal-foot .wkn-btn{height:40px;padding:0 14px;border-radius:12px;font-size:14px;line-height:22px}
-      .wkn-modal .wkn-input,.wkn-modal .wkn-select{height:40px}
-      .wkn-modal-foot .wkn-select{height:40px}
+      .wkn-modal .wkn-input,.wkn-modal .wkn-select{height:36px}
       .wkn-field{display:flex;flex-direction:column;gap:6px}
       .wkn-field > label{font-size:13px;line-height:20px;color:var(--dsw-alias-label-secondary)}
       .wkn-textarea{width:100%;min-height:240px;padding:10px 12px;border-radius:12px;resize:vertical;
@@ -1128,7 +1125,7 @@ window.__ModuleLoader__.load({
         line-height:20px;cursor:pointer}
       .wkn-up-btn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
       .wkn-up-btn:disabled{opacity:.5;cursor:default}
-      .wkn-up-btn[data-variant="empty"]{height:40px;padding:0 14px;border-radius:12px;
+      .wkn-up-btn[data-variant="empty"]{height:32px;padding:0 12px;border-radius:12px;
         font-size:14px;line-height:22px;border:1px solid var(--dsw-alias-border-l3)}
       .wkn-up-btn[data-variant="empty"]:hover{border-color:var(--dsw-alias-border-l4)}
       .wkn-up-menu{position:fixed;z-index:120;width:268px;max-height:340px;overflow:auto;
@@ -1151,7 +1148,7 @@ window.__ModuleLoader__.load({
       .wkn-up-state[data-kind="ok"]{color:var(--dsw-alias-label-secondary)}
       .wkn-up-foot{display:flex;gap:6px;margin-top:4px;padding-top:6px;
         border-top:1px solid var(--dsw-alias-border-l1)}
-      .wkn-up-foot button{flex:1 1 auto;height:28px;border:none;border-radius:8px;
+      .wkn-up-foot button{flex:1 1 auto;height:32px;border:none;border-radius:12px;
         background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;
         font-size:12px;cursor:pointer}
       .wkn-up-foot button:hover{background:var(--dsw-alias-interactive-bg-hover);
@@ -1204,7 +1201,7 @@ window.__ModuleLoader__.load({
           { className: 'wkn-actions' },
           h(
             'button',
-            { type: 'button', className: 'wkn-btn', 'data-size': 'sm', onClick: () => onCopy(result) },
+            { type: 'button', className: 'wkn-btn', onClick: () => onCopy(result) },
             labels.copy,
           ),
           onAsk
@@ -1213,7 +1210,6 @@ window.__ModuleLoader__.load({
                 {
                   type: 'button',
                   className: 'wkn-btn',
-                  'data-size': 'sm',
                   'data-variant': 'primary',
                   onClick: () => onAsk(result),
                 },
@@ -1287,13 +1283,13 @@ window.__ModuleLoader__.load({
                 actions.edit !== undefined && (doc.source === 'manual' || doc.type === 'manual')
                   ? h(
                       'button',
-                      { type: 'button', className: 'wkn-btn', 'data-size': 'sm', onClick: stop(actions.edit) },
+                      { type: 'button', className: 'wkn-btn', onClick: stop(actions.edit) },
                       labels.edit,
                     )
                   : null,
                 h(
                   'button',
-                  { type: 'button', className: 'wkn-btn', 'data-size': 'sm', onClick: stop(actions.reparse) },
+                  { type: 'button', className: 'wkn-btn', onClick: stop(actions.reparse) },
                   labels.reparse,
                 ),
                 h(
@@ -1301,7 +1297,6 @@ window.__ModuleLoader__.load({
                   {
                     type: 'button',
                     className: 'wkn-btn wkn-danger',
-                    'data-size': 'sm',
                     onClick: stop(actions.remove),
                   },
                   labels.remove,
@@ -1783,7 +1778,6 @@ window.__ModuleLoader__.load({
                 {
                   type: 'button',
                   className: 'wkn-btn',
-                  'data-size': 'sm',
                   disabled: busy || saving,
                   onClick: () => {
                     setEditing(null);
@@ -1815,7 +1809,6 @@ window.__ModuleLoader__.load({
                           {
                             type: 'button',
                             className: 'wkn-btn',
-                            'data-size': 'sm',
                             'data-variant': 'primary',
                             disabled: saving || editing.text.trim() === '',
                             onClick: () => void saveChunk(chunk, editing.text),
@@ -1827,7 +1820,6 @@ window.__ModuleLoader__.load({
                           {
                             type: 'button',
                             className: 'wkn-btn',
-                            'data-size': 'sm',
                             disabled: saving,
                             onClick: () => setEditing(null),
                           },
@@ -1839,7 +1831,7 @@ window.__ModuleLoader__.load({
                         null,
                         h(
                           'button',
-                          { type: 'button', className: 'wkn-btn', 'data-size': 'sm', onClick: () => void copyChunk(chunk) },
+                          { type: 'button', className: 'wkn-btn', onClick: () => void copyChunk(chunk) },
                           t('copy'),
                         ),
                         isEditableChunk(chunk)
@@ -1848,7 +1840,6 @@ window.__ModuleLoader__.load({
                               {
                                 type: 'button',
                                 className: 'wkn-btn',
-                                'data-size': 'sm',
                                 onClick: () => {
                                   notify(null);
                                   setEditing({ id: chunk.id, text: chunk.content });
@@ -1863,7 +1854,6 @@ window.__ModuleLoader__.load({
                               {
                                 type: 'button',
                                 className: 'wkn-btn',
-                                'data-size': 'sm',
                                 'data-variant': 'primary',
                                 onClick: () => void askWithChunk(chunk),
                               },
@@ -1958,7 +1948,7 @@ window.__ModuleLoader__.load({
             },
             t('tabFile'),
           ),
-          h('button', { type: 'button', className: 'wkn-btn', 'data-size': 'sm', onClick: onClose }, t('back')),
+          h('button', { type: 'button', className: 'wkn-btn', onClick: onClose }, t('back')),
         ),
         body(),
       );
@@ -1993,7 +1983,7 @@ window.__ModuleLoader__.load({
             { className: 'wkn-modal-head' },
             h('span', { className: 'wkn-modal-title' }, title),
             h('div', { className: 'wkn-spacer' }),
-            h('button', { type: 'button', className: 'wkn-btn', 'data-size': 'sm', onClick: onClose }, '✕'),
+            h('button', { type: 'button', className: 'wkn-btn', onClick: onClose }, '✕'),
           ),
           h('div', { className: 'wkn-modal-body' }, children),
           footer === undefined ? null : h('div', { className: 'wkn-modal-foot' }, footer),
@@ -2382,7 +2372,7 @@ window.__ModuleLoader__.load({
           h('div', { className: 'wkn-spacer' }),
           messages.length === 0
             ? null
-            : h('button', { type: 'button', className: 'wkn-btn', 'data-size': 'sm', onClick: reset }, t('newChat')),
+            : h('button', { type: 'button', className: 'wkn-btn', onClick: reset }, t('newChat')),
         ),
         agents === null
           ? h('div', { className: 'wkn-empty' }, t('loading'))
@@ -2497,7 +2487,6 @@ window.__ModuleLoader__.load({
                           {
                             type: 'button',
                             className: 'wkn-btn',
-                            'data-size': 'sm',
                             onClick: async () => {
                               try {
                                 await globalThis.navigator?.clipboard?.writeText(message.text);
@@ -2515,7 +2504,6 @@ window.__ModuleLoader__.load({
                               {
                                 type: 'button',
                                 className: 'wkn-btn',
-                                'data-size': 'sm',
                                 'data-variant': 'primary',
                                 onClick: async () => {
                                   try {
@@ -2926,6 +2914,15 @@ window.__ModuleLoader__.load({
       const generation = useRef(0);
       const configured = Boolean(settings.baseUrl);
 
+      /** Success notices are transient; errors stay until the next action. */
+      useEffect(() => {
+        if (note === null || note.kind !== 'ok') return undefined;
+        const timer = setTimeout(() => {
+          setNote((current) => (current !== null && current.kind === 'ok' ? null : current));
+        }, 4000);
+        return () => clearTimeout(timer);
+      }, [note]);
+
       /** Report a failure through the shared banner. */
       const fail = useCallback((error) => {
         setNote({ kind: 'error', text: error instanceof Error ? error.message : String(error) });
@@ -2944,11 +2941,6 @@ window.__ModuleLoader__.load({
           });
           // Keep an open detail view pointed at a knowledge base that still exists.
           setOpenKb((previous) => (previous === null ? null : (list.find((kb) => kb.id === previous.id) ?? null)));
-          setNote((current) =>
-            current !== null && current.sticky === true
-              ? current
-              : { kind: 'ok', text: t('connected', { count: list.length }) },
-          );
           return list;
         },
         [t],
@@ -3755,7 +3747,6 @@ window.__ModuleLoader__.load({
                               {
                                 type: 'button',
                                 className: 'wkn-btn',
-                                'data-size': 'sm',
                                 onClick: () => setChecked(checked.length === kbs.length ? [] : kbs.map((kb) => kb.id)),
                               },
                               checked.length === kbs.length ? t('clearAll') : t('selectAll'),
@@ -4165,7 +4156,6 @@ window.__ModuleLoader__.load({
                                           {
                                             type: 'button',
                                             className: 'wkn-btn',
-                                            'data-size': 'sm',
                                             disabled: docPage <= 1 || busy,
                                             onClick: () => setDocPage((page) => Math.max(1, page - 1)),
                                           },
@@ -4181,7 +4171,6 @@ window.__ModuleLoader__.load({
                                           {
                                             type: 'button',
                                             className: 'wkn-btn',
-                                            'data-size': 'sm',
                                             disabled: docPage >= docTotalPages || busy,
                                             onClick: () => setDocPage((page) => page + 1),
                                           },
@@ -4376,7 +4365,6 @@ window.__ModuleLoader__.load({
                 prev: '上一页',
                 next: '下一页',
                 pageOf: '第 {page} / {total} 页 · 共 {count} 篇',
-                connected: '已连接，共 {count} 个知识库。',
                 testConnection: '测试连接',
                 testing: '测试中…',
                 baseMissing: '尚未配置服务地址',
@@ -4573,7 +4561,6 @@ window.__ModuleLoader__.load({
                 prev: 'Previous',
                 next: 'Next',
                 pageOf: 'Page {page} / {total} · {count} documents',
-                connected: 'Connected — {count} knowledge bases.',
                 testConnection: 'Test connection',
                 testing: 'Testing…',
                 baseMissing: 'No service address configured',

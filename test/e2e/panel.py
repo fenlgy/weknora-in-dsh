@@ -24,6 +24,20 @@ KB_NAME = f"端到端测试库-{RUN}"
 ARTICLE = f"Playwright 测试文章-{RUN}"
 
 
+def assert_uniform_controls(page, where):
+    """Every visible panel control shares one 32px control height."""
+    sizes = page.evaluate(
+        """() => [...document.querySelectorAll(
+          '.wkn-root .wkn-btn, .wkn-root .wkn-tab, .wkn-root .wkn-chip, .wkn-root .wkn-link'
+        )].filter((node) => node.offsetWidth > 0 && node.offsetHeight > 0)
+          .map((node) => Math.round(node.getBoundingClientRect().height))"""
+    )
+    if set(sizes) != {32}:
+        fail(page, f"inconsistent control heights in {where}: {sorted(set(sizes))}")
+    if "已连接，共" in page.locator('.wkn-root').inner_text():
+        fail(page, f"routine connection banner is still visible in {where}")
+
+
 def fail(page, message):
     page.screenshot(path=str(OUT / "failure.png"), full_page=True)
     print(f"FAIL: {message}")
@@ -77,6 +91,7 @@ with sync_playwright() as playwright:
         fail(page, "knowledge base list did not render (产品文档 missing)")
     if "新建知识库" not in panel.inner_text():
         fail(page, "new-knowledge-base action missing")
+    assert_uniform_controls(page, "knowledge-base list")
     page.screenshot(path=str(OUT / "02-kbs.png"))
 
     # 2b. Settings round-trip: the host probe must reach the deployment.
@@ -114,6 +129,7 @@ with sync_playwright() as playwright:
     body = panel.inner_text()
     if "退款流程" not in body or "上传文件" not in body:
         fail(page, "document table did not render")
+    assert_uniform_controls(page, "document table")
     page.screenshot(path=str(OUT / "03-documents.png"))
 
     # 4. Create a manual article.
