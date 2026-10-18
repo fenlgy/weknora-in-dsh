@@ -950,8 +950,6 @@ window.__ModuleLoader__.load({
       .wkn-btn[data-variant="primary"]{background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-base)}
       .wkn-btn[data-variant="primary"]:hover:not(:disabled){background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-base);filter:none;opacity:.9}
       .wkn-btn[data-size="sm"]{height:28px;padding:0 8px;border-radius:8px;font-size:13px;line-height:20px}
-      /* DSH's primary buttons keep the 32px/12px control shape even at the small size. */
-      .wkn-btn[data-variant="primary"][data-size="sm"]{height:32px;padding:0 12px;border-radius:12px}
       .wkn-chips{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 4px}
       .wkn-chip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:999px;
         border:1px solid var(--dsw-alias-border-l3);background:transparent;color:var(--dsw-alias-label-secondary);
@@ -3816,23 +3814,11 @@ window.__ModuleLoader__.load({
                                 {
                                   type: 'button',
                                   className: 'wkn-btn',
-                                  'data-size': 'sm',
                                   'data-variant': 'primary',
                                   disabled: busy || !configured,
                                   onClick: () => setShowCreateKb(true),
                                 },
                                 t('newKb'),
-                              ),
-                              h(
-                                'button',
-                                {
-                                  type: 'button',
-                                  className: 'wkn-btn',
-                                  'data-size': 'sm',
-                                  disabled: busy || !configured,
-                                  onClick: () => void refresh(settings),
-                                },
-                                t('refresh'),
                               ),
                             ),
                             h(
@@ -4003,7 +3989,6 @@ window.__ModuleLoader__.load({
                                 {
                                   type: 'button',
                                   className: 'wkn-btn',
-                                  'data-size': 'sm',
                                   'data-variant': 'primary',
                                   disabled: busy,
                                   onClick: () => setArticleEditor({ mode: 'create', kbId: openKb.id, initial: null }),
@@ -4015,7 +4000,6 @@ window.__ModuleLoader__.load({
                                 {
                                   type: 'button',
                                   className: 'wkn-btn',
-                                  'data-size': 'sm',
                                   disabled: busy,
                                   onClick: () => uploadInput.current?.click(),
                                 },
@@ -4026,7 +4010,6 @@ window.__ModuleLoader__.load({
                                 {
                                   type: 'button',
                                   className: 'wkn-btn',
-                                  'data-size': 'sm',
                                   disabled: busy,
                                   onClick: () => folderInput.current?.click(),
                                 },
@@ -4037,7 +4020,6 @@ window.__ModuleLoader__.load({
                                 {
                                   type: 'button',
                                   className: 'wkn-btn',
-                                  'data-size': 'sm',
                                   disabled: busy,
                                   onClick: () => setShowUrlImport(true),
                                 },
@@ -4048,7 +4030,6 @@ window.__ModuleLoader__.load({
                                 {
                                   type: 'button',
                                   className: 'wkn-btn wkn-danger',
-                                  'data-size': 'sm',
                                   disabled: busy,
                                   onClick: () => void deleteKb(),
                                 },
@@ -4059,7 +4040,6 @@ window.__ModuleLoader__.load({
                                 {
                                   type: 'button',
                                   className: 'wkn-btn',
-                                  'data-size': 'sm',
                                   disabled: busy,
                                   onClick: () => void loadDocs(openKb.id, docPage, docKeyword),
                                 },
