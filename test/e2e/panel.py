@@ -38,6 +38,47 @@ def assert_uniform_controls(page, where):
         fail(page, f"routine connection banner is still visible in {where}")
 
 
+def scroll_editor_to_top(page):
+    """Put every soft-scrolled pane in the article modal back to the top (screenshots)."""
+    page.evaluate(
+        """() => {
+          const root = document.querySelector('.wkn-modal.wkn-modal-wide');
+          if (root === null) return;
+          for (const node of root.querySelectorAll('*')) {
+            if (node.scrollHeight > node.clientHeight + 2) node.scrollTop = 0;
+          }
+        }"""
+    )
+    page.wait_for_timeout(300)
+
+
+def assert_modal_body_no_h_overflow(page, dialog, where):
+    """A content-box width bug used to give the article modal body a horizontal scrollbar."""
+    metrics = dialog.locator(".wkn-modal-body").first.evaluate(
+        "el => ({clientWidth: el.clientWidth, scrollWidth: el.scrollWidth})"
+    )
+    if metrics["scrollWidth"] > metrics["clientWidth"] + 1:
+        fail(page, f"modal body overflows horizontally in {where}: {metrics}")
+    print(f"PASS: no horizontal overflow in the article modal body ({where}): {metrics['clientWidth']}px")
+
+
+def assert_title_visible(page, dialog, title_input, where):
+    """The 标题 field must not be scrolled out of the modal body."""
+    title_box = title_input.bounding_box()
+    modal_box = dialog.bounding_box()
+    head_box = dialog.locator(".wkn-modal-head").bounding_box()
+    scroll_top = dialog.locator(".wkn-modal-body").first.evaluate("el => el.scrollTop")
+    if title_box is None or modal_box is None or head_box is None:
+        fail(page, f"标题 field has no layout box in {where}")
+    if title_box["y"] < head_box["y"] + head_box["height"] - 1:
+        fail(page, f"标题 field is clipped above in {where}: title={title_box}, head={head_box}")
+    if title_box["y"] + title_box["height"] > modal_box["y"] + modal_box["height"] + 1:
+        fail(page, f"标题 field is clipped below in {where}: title={title_box}, modal={modal_box}")
+    if scroll_top != 0:
+        fail(page, f"article modal body is scrolled in {where} (scrollTop={scroll_top})")
+    print(f"PASS: 标题 field visible without scrolling ({where})")
+
+
 def fail(page, message):
     page.screenshot(path=str(OUT / "failure.png"), full_page=True)
     print(f"FAIL: {message}")
@@ -132,20 +173,259 @@ with sync_playwright() as playwright:
     assert_uniform_controls(page, "document table")
     page.screenshot(path=str(OUT / "03-documents.png"))
 
-    # 4. Create a manual article.
+    # 4. Create a manual article with the vendored Toast UI Editor (WYSIWYG by
+    # default): heading from the visual toolbar, a table from the table picker,
+    # and a Markdown-source round-trip.
     page.get_by_role("button", name="新建文章").first.click()
-    dialog = page.locator(".wkn-modal")
+    dialog = page.locator(".wkn-modal.wkn-modal-wide")
     dialog.wait_for(state="visible", timeout=5000)
-    dialog.locator("input.wkn-input").first.fill(ARTICLE)
-    dialog.locator("textarea.wkn-textarea").first.fill("# 测试\n\n这是端到端测试创建的文章。")
+    title_input = dialog.locator("input.wkn-input").first
+    title_input.fill(ARTICLE)
+    if dialog.locator(".wkn-md-shell").count() == 0:
+        fail(page, "article dialog has no .wkn-md-shell container")
+    try:
+        dialog.locator(".wkn-toastui .toastui-editor-defaultUI").wait_for(state="visible", timeout=20000)
+    except Exception:
+        fail(page, "Toast UI Editor did not load from the host vendor route")
+    page.wait_for_timeout(800)
+    if dialog.locator(".wkn-md-loading").count() != 0:
+        fail(page, "editor loading placeholder is still visible after the editor became ready")
+
+    # The vendored editor must be the Chinese Toast UI toolbar.
+    labels = dialog.locator(".toastui-editor-toolbar-icons").evaluate_all(
+        "els => els.map(el => el.getAttribute('aria-label') || '')"
+    )
+    expected_labels = [
+        "标题", "加粗", "斜体字", "删除线", "水平线", "引用块", "无序列表", "有序列表",
+        "任务", "缩进", "减少缩进", "插入表格", "插入链接", "内嵌代码", "插入代码块",
+    ]
+    if labels[:15] != expected_labels:
+        fail(page, f"Toast UI toolbar is not the expected Chinese toolbar: {labels}")
+    prose = dialog.locator(".toastui-editor-ww-container .ProseMirror")
+    if prose.count() != 1 or not prose.is_visible():
+        fail(page, "WYSIWYG .toastui-editor-ww-container .ProseMirror body is missing")
+    tabs = dialog.locator(".toastui-editor-mode-switch .tab-item")
+    tab_texts = [text.strip() for text in tabs.all_inner_texts()]
+    if tab_texts != ["Markdown", "所见即所得"]:
+        fail(page, f"mode switch tabs are {tab_texts}, expected Markdown/所见即所得")
+    if "active" not in (tabs.nth(1).get_attribute("class") or ""):
+        fail(page, "所见即所得 is not the active mode when the editor opens")
+    print("PASS: Toast UI Editor loaded from the vendor route (Chinese toolbar, WYSIWYG, Markdown/所见即所得)")
+    assert_title_visible(page, dialog, title_input, "WYSIWYG on open")
+    assert_modal_body_no_h_overflow(page, dialog, "WYSIWYG on open")
+
+    # Type the body, turn the line into a level-2 heading through the toolbar.
+    prose.click()
+    page.keyboard.insert_text("端到端测试正文。")
+    page.wait_for_timeout(400)
+    dialog.locator(".toastui-editor-toolbar-icons[aria-label='标题']").click()
+    page.wait_for_timeout(400)
+    dialog.locator(".toastui-editor-popup-add-heading li[data-level='2']").click()
+    page.wait_for_timeout(500)
+    heading = dialog.locator(".toastui-editor-ww-container .ProseMirror h2")
+    if heading.count() != 1 or "端到端测试正文" not in heading.inner_text():
+        fail(page, "标题 toolbar did not turn the line into a level-2 heading")
+
+    # Insert a 3x3 table through the visual table picker (mouse coordinates:
+    # a selection layer intercepts clicks on individual picker cells).
+    dialog.locator(".toastui-editor-toolbar-icons[aria-label='插入表格']").click()
+    page.wait_for_timeout(500)
+    cells = dialog.locator(".toastui-editor-popup-add-table .toastui-editor-table-cell")
+    if cells.count() != 36:
+        fail(page, f"table picker has {cells.count()} cells, expected 36 (6x6)")
+    target = cells.nth(2 * 6 + 2)  # third row, third column
+    box = target.bounding_box()
+    if box is None:
+        fail(page, "table picker target cell has no bounding box")
+    page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    page.wait_for_timeout(900)
+    table = dialog.locator(".toastui-editor-ww-container table")
+    if table.count() != 1 or table.locator("tr").count() != 3:
+        fail(page, f"visual table insertion produced {table.count()} tables / {table.locator('tr').count()} rows, expected 1 / 3")
+    print(f"PASS: visual table picker inserted a 3x3 table ({table.locator('tr').count()} rows)")
+    assert_title_visible(page, dialog, title_input, "WYSIWYG with table")
+    assert_modal_body_no_h_overflow(page, dialog, "WYSIWYG with table")
+    page.screenshot(path=str(OUT / "04b-markdown-editor.png"))
+
+    # 4b. Paste plain-text Markdown into WYSIWYG: it must be converted to rich
+    # HTML (heading, inline styles, lists, quote, table, link), not stay literal.
+    pasted_markdown = """## 粘贴标题
+
+**粗体** 和 *斜体* 和 ~~删除~~ 和 `代码`
+
+- 列表一
+- 列表二
+
+1. 步骤一
+2. 步骤二
+
+> 引用段落
+
+| 列A | 列B |
+| --- | --- |
+| 值1 | 值2 |
+
+[链接](https://example.com)"""
+    paste_not_prevented = page.evaluate(
+        """(md) => {
+          const target = document.querySelector('.wkn-modal.wkn-modal-wide .toastui-editor-ww-container .ProseMirror');
+          target.focus();
+          const range = document.createRange();
+          range.setStart(target, target.childNodes.length);
+          range.collapse(true);
+          const selection = window.getSelection();
+          selection.removeAllRanges();
+          selection.addRange(range);
+          const data = new DataTransfer();
+          data.setData('text/plain', md);
+          const event = new ClipboardEvent('paste', {bubbles: true, cancelable: true, clipboardData: data});
+          return target.dispatchEvent(event);
+        }""",
+        pasted_markdown,
+    )
+    if paste_not_prevented is not False:
+        fail(page, "Markdown paste was not intercepted (the default paste was not prevented)")
+    page.wait_for_timeout(1200)
+    pasted = dialog.locator(".toastui-editor-ww-container .ProseMirror").evaluate(
+        """(root) => {
+          const count = (selector) => root.querySelectorAll(selector).length;
+          return {
+            h2: count('h2'), strong: count('strong'), em: count('em'), del: count('del'),
+            code: count('code'), ul: count('ul'), ulLi: count('ul li'), ol: count('ol'),
+            olLi: count('ol li'), blockquote: count('blockquote'), table: count('table'),
+            links: count('a'), literalHeading: root.innerText.includes('## 粘贴标题'),
+          };
+        }"""
+    )
+    expected_paste = {
+        "h2": 2, "strong": 1, "em": 1, "del": 1, "code": 1, "ul": 1, "ulLi": 2,
+        "ol": 1, "olLi": 2, "blockquote": 1, "table": 2, "links": 1,
+    }
+    for key, expected in expected_paste.items():
+        if pasted[key] != expected:
+            fail(page, f"pasted Markdown did not render {key}: got {pasted[key]}, expected {expected}; counts={pasted}")
+    if pasted["literalHeading"]:
+        fail(page, "pasted Markdown stayed literal in WYSIWYG (found the text '## 粘贴标题')")
+    print("PASS: pasted Markdown converted to rich WYSIWYG content (h2/strong/em/del/code/lists/quote/table/link)")
+    assert_modal_body_no_h_overflow(page, dialog, "WYSIWYG after paste")
+
+    # 4c. Typed Markdown block shortcuts in a fresh paragraph: "# " -> h1,
+    # "- " -> bullet list (the caret is moved to the end of the document first).
+    page.evaluate(
+        """() => {
+          const target = document.querySelector('.wkn-modal.wkn-modal-wide .toastui-editor-ww-container .ProseMirror');
+          target.focus();
+          const range = document.createRange();
+          range.setStart(target, target.childNodes.length);
+          range.collapse(true);
+          const selection = window.getSelection();
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }"""
+    )
+    page.keyboard.press("Enter")
+    page.keyboard.press("Enter")
+    page.wait_for_timeout(300)
+    page.keyboard.type("# ")
+    page.wait_for_timeout(400)
+    page.keyboard.insert_text("一级标题")
+    page.wait_for_timeout(400)
+    shortcut_heading = dialog.locator(".toastui-editor-ww-container .ProseMirror h1")
+    if shortcut_heading.count() != 1 or "一级标题" not in shortcut_heading.inner_text():
+        fail(page, "typed '# ' shortcut did not create an h1 heading")
+    page.keyboard.press("Enter")
+    page.keyboard.press("Enter")
+    page.wait_for_timeout(300)
+    page.keyboard.type("- ")
+    page.wait_for_timeout(400)
+    page.keyboard.insert_text("列表项")
+    page.wait_for_timeout(600)
+    shortcut_lists = dialog.locator(".toastui-editor-ww-container .ProseMirror ul")
+    if shortcut_lists.count() != 2 or dialog.locator(".toastui-editor-ww-container .ProseMirror ul li").count() != 3:
+        fail(page, f"typed '- ' shortcut did not create a bullet list (ul={shortcut_lists.count()})")
+    print("PASS: typed '# ' and '- ' shortcuts created an h1 heading and a bullet list")
+    scroll_editor_to_top(page)
+    page.screenshot(path=str(OUT / "04e-paste-typing.png"))
+
+    # Markdown mode: the source pane must carry the heading and table syntax,
+    # plus the converted pasted Markdown without escaped markers.
+    tabs.filter(has_text="Markdown").first.click()
+    page.wait_for_timeout(1200)
+    markdown_source = dialog.locator(".toastui-editor-md-container").inner_text()
+    for needle in (
+        "## 端到端测试正文",
+        "| --- |",
+        "## 粘贴标题",
+        "**粗体**",
+        "*斜体*",
+        "~~删除~~",
+        "`代码`",
+        "[链接](https://example.com)",
+    ):
+        if needle not in markdown_source:
+            fail(page, f"Markdown source pane is missing {needle!r}: {markdown_source[:400]!r}")
+    if "\\#" in markdown_source or "\\*\\*" in markdown_source:
+        fail(page, f"Markdown source pane contains escaped markers: {markdown_source[:400]!r}")
+    assert_title_visible(page, dialog, title_input, "Markdown mode")
+    assert_modal_body_no_h_overflow(page, dialog, "Markdown mode")
+    scroll_editor_to_top(page)
+    page.screenshot(path=str(OUT / "04c-markdown-split.png"))
+
+    # Back to WYSIWYG: headings, tables and typed shortcuts must survive the
+    # Markdown round-trip (toolbar heading/table + pasted heading/table).
+    tabs.filter(has_text="所见即所得").first.click()
+    page.wait_for_timeout(1200)
+    round_trip = dialog.locator(".toastui-editor-ww-container .ProseMirror").evaluate(
+        """(root) => {
+          const count = (selector) => root.querySelectorAll(selector).length;
+          return {h1: count('h1'), h2: count('h2'), table: count('table'), ul: count('ul'), ol: count('ol'), blockquote: count('blockquote')};
+        }"""
+    )
+    if round_trip["h2"] != 2:
+        fail(page, f"WYSIWYG mode lost a heading after the Markdown round-trip: {round_trip}")
+    if round_trip["table"] != 2:
+        fail(page, f"WYSIWYG mode lost a table after the Markdown round-trip: {round_trip}")
+    if round_trip["h1"] != 1 or round_trip["ul"] != 2 or round_trip["ol"] != 1 or round_trip["blockquote"] != 1:
+        fail(page, f"WYSIWYG mode lost typed/pasted structure after the Markdown round-trip: {round_trip}")
+    print("PASS: Markdown source exposed heading/table/paste syntax and the round-trip kept all structure")
+
     dialog.locator("select.wkn-select").first.select_option("publish")
     page.get_by_role("button", name="保存", exact=True).click()
-    page.wait_for_timeout(2000)
+    page.wait_for_timeout(2500)
     if ARTICLE not in panel.inner_text():
         fail(page, "created article is not in the document table")
     page.screenshot(path=str(OUT / "04-article-created.png"))
 
-    # 4b. Re-parse and delete the article through the row actions.
+    # 4b. Reopen the article: the title and Markdown body must be prefilled.
+    row = panel.locator(".wkn-table tbody tr", has_text=ARTICLE).first
+    row.get_by_role("button", name="编辑", exact=True).click()
+    edit_dialog = page.locator(".wkn-modal.wkn-modal-wide")
+    edit_dialog.wait_for(state="visible", timeout=5000)
+    try:
+        edit_dialog.locator(".wkn-toastui .toastui-editor-defaultUI").wait_for(state="visible", timeout=20000)
+    except Exception:
+        fail(page, "edit-article dialog Toast UI Editor did not load")
+    page.wait_for_timeout(900)
+    if edit_dialog.locator("input.wkn-input").first.input_value() != ARTICLE:
+        fail(page, "edit-article dialog did not prefill the title")
+    edit_body = edit_dialog.locator(".toastui-editor-ww-container .ProseMirror")
+    edit_text = edit_body.inner_text()
+    for needle in ("端到端测试正文", "粘贴标题", "一级标题", "列表项"):
+        if needle not in edit_text:
+            fail(page, f"edit-article dialog did not prefill {needle!r}")
+    if edit_dialog.locator(".toastui-editor-ww-container table").count() != 2:
+        fail(page, "edit-article dialog did not prefill both Markdown tables")
+    if edit_body.locator("h2").count() != 2 or edit_body.locator("h1").count() != 1:
+        fail(page, "edit-article dialog did not prefill the heading structure")
+    print("PASS: edit-article dialog prefilled title, body text and table")
+    assert_modal_body_no_h_overflow(page, edit_dialog, "edit-article dialog")
+    page.screenshot(path=str(OUT / "04d-article-edit.png"))
+    edit_dialog.get_by_role("button", name="取消", exact=True).click()
+    page.wait_for_timeout(600)
+    if page.locator(".wkn-modal").count() != 0:
+        fail(page, "取消 did not close the edit-article dialog")
+
+    # 4c. Re-parse and delete the article through the row actions.
     row = panel.locator(".wkn-table tbody tr", has_text=ARTICLE).first
     row.get_by_role("button", name="重新解析", exact=True).click()
     page.wait_for_timeout(1500)

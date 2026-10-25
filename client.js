@@ -1017,11 +1017,33 @@ window.__ModuleLoader__.load({
       .wkn-md del{color:var(--dsw-alias-label-tertiary)}
       .wkn-md-image{display:inline-block;padding:.05em .4em;border-radius:6px;font-size:.92em;
         border:1px dashed var(--dsw-alias-border-l4);color:var(--dsw-alias-label-tertiary)}
-      .wkn-editor{display:block;width:100%;min-height:220px;padding:10px 12px;border-radius:12px;
+      .wkn-editor{display:block;box-sizing:border-box;width:100%;min-height:220px;padding:10px 12px;border-radius:12px;
         border:1px solid var(--dsw-alias-border-l3);background:transparent;color:inherit;outline:none;
         resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.65}
       .wkn-editor:focus{border-color:#4176e6;box-shadow:0 0 0 .5px #4176e6 inset}
       .wkn-editor:disabled{opacity:.6}
+      .wkn-md-shell{position:relative;display:flex;flex:1 1 auto;flex-direction:column;gap:8px;min-height:260px}
+      .wkn-md-shell[data-busy="true"] .wkn-toastui{pointer-events:none;opacity:.6}
+      .wkn-md-loading{position:absolute;inset:0;z-index:2;display:flex;align-items:center;justify-content:center;
+        gap:8px;border:1px dashed var(--dsw-alias-border-l3);border-radius:12px;
+        background:var(--dsw-alias-bg-base);
+        color:var(--dsw-alias-label-tertiary);font-size:13px;line-height:20px}
+      .wkn-md-spinner{width:14px;height:14px;border-radius:50%;border:2px solid var(--dsw-alias-border-l3);
+        border-top-color:#4176e6;animation:wkn-md-spin .8s linear infinite;flex:0 0 auto}
+      @keyframes wkn-md-spin{to{transform:rotate(360deg)}}
+      .wkn-md-shell > textarea.wkn-textarea{flex:1 1 auto;min-height:260px}
+      .wkn-toastui{display:flex;flex:1 1 auto;flex-direction:column;min-height:0;width:100%;font-size:13px}
+      .wkn-toastui .toastui-editor-defaultUI{border:1px solid var(--dsw-alias-border-l2);border-radius:12px;
+        font-family:inherit;background:transparent;color:var(--dsw-alias-label-primary)}
+      .wkn-toastui .toastui-editor-defaultUI-toolbar{padding:2px 4px;
+        border-bottom-color:var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);
+        border-radius:12px 12px 0 0}
+      .wkn-toastui .toastui-editor-ww-container,
+      .wkn-toastui .toastui-editor-md-container{background:transparent}
+      .wkn-toastui .toastui-editor-main-container{color:var(--dsw-alias-label-primary)}
+      .wkn-toastui .toastui-editor-mode-switch{background:transparent;
+        border-top-color:var(--dsw-alias-border-l2)}
+      .wkn-toastui .toastui-editor-toolbar-icons{border:none}
       .wkn-chunk-head{display:flex;align-items:center;gap:8px;margin-bottom:4px}
       .wkn-frame{width:100%;height:520px;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;
         background:var(--dsw-alias-bg-layer-1)}
@@ -1078,7 +1100,7 @@ window.__ModuleLoader__.load({
       .wkn-modal .wkn-input,.wkn-modal .wkn-select{height:36px}
       .wkn-field{display:flex;flex-direction:column;gap:6px}
       .wkn-field > label{font-size:13px;line-height:20px;color:var(--dsw-alias-label-secondary)}
-      .wkn-textarea{width:100%;min-height:240px;padding:10px 12px;border-radius:12px;resize:vertical;
+      .wkn-textarea{box-sizing:border-box;width:100%;min-height:240px;padding:10px 12px;border-radius:12px;resize:vertical;
         border:1px solid var(--dsw-alias-border-l3);background:transparent;color:inherit;outline:none;
         font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.65}
       .wkn-textarea:focus{border-color:#4176e6;box-shadow:0 0 0 .5px #4176e6 inset}
@@ -1105,7 +1127,10 @@ window.__ModuleLoader__.load({
       .wkn-cite{display:flex;flex-direction:column;gap:3px;margin-top:8px;padding-top:8px;
         border-top:1px dashed var(--dsw-alias-border-l2)}
       .wkn-cite-title{font-size:13px;line-height:20px;font-weight:500}
-      .wkn-modal-wide{width:min(860px,95vw)}
+      .wkn-modal-wide{width:min(1720px,97vw);max-height:97vh}
+      .wkn-modal:has(.wkn-md-shell){height:97vh}
+      .wkn-modal-body:has(.wkn-md-shell){flex:1 1 auto;overflow:hidden;padding:12px 20px;min-height:0}
+      .wkn-modal-body:has(.wkn-md-shell) > .wkn-field:has(.wkn-md-shell){flex:1 1 0;min-height:0}
       .wkn-drop{display:flex;align-items:center;justify-content:center;gap:8px;min-height:88px;border-radius:12px;
         border:1px dashed var(--dsw-alias-border-l4);color:var(--dsw-alias-label-tertiary);font-size:13px;
         cursor:pointer;text-align:center;padding:14px}
@@ -1991,6 +2016,570 @@ window.__ModuleLoader__.load({
       );
     }
 
+    //#region markdown-editor-ui
+
+    /** Versioned path prefix of the vendored Toast UI Editor assets. */
+    const EDITOR_VERSION = 'toastui-3.2.2';
+    /** Cache-busting revision: bump whenever `vendor/toastui/` is rebuilt. */
+    const EDITOR_ASSET_REVISION = '2';
+    /** Toolbar groups handed to Toast UI Editor (no image upload: manual articles are text-only). */
+    const EDITOR_TOOLBAR_ITEMS = [
+      ['heading', 'bold', 'italic', 'strike'],
+      ['hr', 'quote'],
+      ['ul', 'ol', 'task', 'indent', 'outdent'],
+      ['table', 'link'],
+      ['code', 'codeblock'],
+    ];
+    /** Shared editor loader promise; cleared on failure so the retry button can start over. */
+    let markdownEditorLoader = null;
+
+    /**
+     * Absolute URLs of the vendored editor assets (same origin as the panel,
+     * so no CDN is involved and the desktop app works offline).
+     * @returns `{script, style, darkStyle, i18n}` URLs.
+     */
+    function editorAssetUrls() {
+      const base = proxyBase();
+      const suffix = `/__vendor/${EDITOR_VERSION}`;
+      const rev = `?rev=${EDITOR_ASSET_REVISION}`;
+      return {
+        script: `${base}${suffix}/toastui-editor.min.js${rev}`,
+        style: `${base}${suffix}/toastui-editor.min.css${rev}`,
+        darkStyle: `${base}${suffix}/toastui-editor-dark.min.css${rev}`,
+        i18n: `${base}${suffix}/zh-cn.js${rev}`,
+      };
+    }
+
+    /**
+     * Guess whether pasted plain text is Markdown worth converting.
+     * Plain prose pastes unchanged; structured Markdown is converted so the
+     * WYSIWYG editor behaves the way a Markdown user expects.
+     * @param text - Clipboard text.
+     * @returns True for Markdown-looking text.
+     */
+    function looksLikeMarkdown(text) {
+      const value = String(text ?? '');
+      if (value.trim() === '') return false;
+      if (/(^|\n)\s{0,3}(#{1,6}\s|[-*+]\s|\d+[.)]\s|>\s|```|~~~|\|.*\|)/.test(value)) return true;
+      return /\*\*[^*\n]+\*\*|__[^_\n]+__|~~[^~\n]+~~|`[^`\n]+`|\[[^\]\n]+\]\([^)\s]+\)/.test(value);
+    }
+
+    /** Offscreen Toast UI core used only to turn pasted Markdown into editor HTML. */
+    let markdownConverter = null;
+
+    /**
+     * Escape text inserted through the inline Markdown shortcuts.
+     * @param value - Raw text.
+     * @returns HTML-safe text.
+     */
+    function escapeShortcutText(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    /**
+     * Match one completed inline Markdown token typed at the caret.
+     *
+     * Only the token ending at the caret is considered, so editing normal text
+     * next to an existing token never rewrites it.
+     * @param before - Text from the start of the text node to the caret.
+     * @returns `{start, end, command, delim}` relative to the text node, or null.
+     */
+    function matchTypedInlineMarkdown(before) {
+      const rules = [
+        { pattern: /\*\*([^*\n]+)\*\*$/, command: 'bold', delim: 2 },
+        { pattern: /~~([^~\n]+)~~$/, command: 'strike', delim: 2 },
+        { pattern: /`([^`\n]+)`$/, command: 'code', delim: 1 },
+        { pattern: /(^|[^*])\*([^*\n]+)\*$/, command: 'italic', delim: 1 },
+      ];
+      for (const rule of rules) {
+        const match = rule.pattern.exec(before);
+        if (match === null) continue;
+        const prefix = rule.pattern.source.startsWith('(^|[^*])') ? (match[1] ?? '').length : 0;
+        return {
+          start: match.index + prefix,
+          end: match.index + match[0].length,
+          command: rule.command,
+          delim: rule.delim,
+        };
+      }
+      return null;
+    }
+
+    /**
+     * Convert Markdown into the rich HTML the WYSIWYG editor accepts.
+     * Uses Toast UI's own parser (no second Markdown library).
+     * @param markdown - Pasted Markdown.
+     * @returns HTML string, or null when the converter is unavailable.
+     */
+    function markdownToWysiwygHtml(markdown) {
+      // `EditorCore` is the lightest converter, but older cached vendor
+      // bundles only expose the full `Editor`; both can parse Markdown.
+      const Core = globalThis.__WKN_TOASTUI_CORE__ ?? globalThis.__WKN_TOASTUI__;
+      if (typeof Core !== 'function') return null;
+      if (markdownConverter === null) {
+        const host = document.createElement('div');
+        host.setAttribute('aria-hidden', 'true');
+        host.style.cssText =
+          'position:fixed;left:-10000px;top:0;width:640px;height:320px;visibility:hidden;pointer-events:none';
+        document.body.appendChild(host);
+        markdownConverter = {
+          host,
+          core: new Core({
+            el: host,
+            height: '300px',
+            initialEditType: 'wysiwyg',
+            previewStyle: 'vertical',
+            language: 'zh-CN',
+            usageStatistics: false,
+          }),
+        };
+      }
+      try {
+        markdownConverter.core.setMarkdown(String(markdown), false);
+        return markdownConverter.core.getHTML();
+      } catch {
+        return null;
+      }
+    }
+
+    /**
+     * Append one stylesheet, reusing a previously injected element.
+     * A failed stylesheet does not reject: the editor still works, just plainer.
+     * @param href - Stylesheet URL.
+     * @param id - Dedupe marker stored in `data-wkn-editor`.
+     * @returns Resolves once the sheet loaded or failed.
+     */
+    function ensureEditorStyle(href, id) {
+      return new Promise((resolve) => {
+        const existing = document.querySelector(`link[data-wkn-editor="${id}"]`);
+        if (existing !== null) {
+          resolve();
+          return;
+        }
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = href;
+        link.dataset.wknEditor = id;
+        link.addEventListener('load', () => resolve(), { once: true });
+        link.addEventListener('error', () => {
+          link.remove();
+          resolve();
+        }, { once: true });
+        document.head.appendChild(link);
+      });
+    }
+
+    /**
+     * Append one classic script, resolving with its global side effects applied.
+     * @param src - Script URL.
+     * @param id - Dedupe marker stored in `data-wkn-editor`.
+     * @returns Resolves when executed; rejects when the request fails.
+     */
+    function ensureEditorScript(src, id) {
+      return new Promise((resolve, reject) => {
+        const existing = document.querySelector(`script[data-wkn-editor="${id}"]`);
+        if (existing !== null) {
+          // The tag is present: either it already ran, or the load is still in flight.
+          resolve();
+          return;
+        }
+        const script = document.createElement('script');
+        script.src = src;
+        script.async = true;
+        script.dataset.wknEditor = id;
+        script.addEventListener('load', () => resolve(), { once: true });
+        script.addEventListener('error', () => {
+          script.remove();
+          reject(new Error(`无法加载 ${src}`));
+        }, { once: true });
+        document.head.appendChild(script);
+      });
+    }
+
+    /**
+     * Load the vendored Toast UI Editor (script, stylesheet and zh-CN locale).
+     * @returns `{Editor, darkStyle}` once the global constructor is available.
+     */
+    function loadMarkdownEditor() {
+      if (markdownEditorLoader !== null) return markdownEditorLoader;
+      const urls = editorAssetUrls();
+      markdownEditorLoader = (async () => {
+        await ensureEditorStyle(urls.style, 'toastui');
+        if (typeof globalThis.__WKN_TOASTUI__ !== 'function') {
+          await ensureEditorScript(urls.script, 'toastui');
+        }
+        // Language registration is optional: a failure only leaves the English UI.
+        try {
+          await ensureEditorScript(urls.i18n, 'toastui-i18n');
+        } catch {
+          /* keep the English toolbar */
+        }
+        const Editor = globalThis.__WKN_TOASTUI__;
+        if (typeof Editor !== 'function') throw new Error('Toast UI Editor 未注册');
+        return { Editor, darkStyle: urls.darkStyle };
+      })().catch((error) => {
+        markdownEditorLoader = null;
+        throw error;
+      });
+      return markdownEditorLoader;
+    }
+
+    /**
+     * Decide whether the panel behind an element is a dark surface.
+     * Walks ancestors until a painted background is found (panel roots are often transparent).
+     * @param element - Element inside the panel.
+     * @returns True for a dark surface.
+     */
+    function darkSurface(element) {
+      try {
+        let node = element;
+        while (node !== null && node !== undefined) {
+          const value = globalThis.getComputedStyle?.(node)?.backgroundColor ?? '';
+          const match = /rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)(?:[,\s/]+([\d.]+))?\s*\)/.exec(value);
+          if (match !== null) {
+            const alpha = match[4] === undefined ? 1 : Number(match[4]);
+            if (alpha >= 0.5) {
+              const luminance = (0.2126 * Number(match[1]) + 0.7152 * Number(match[2]) + 0.0722 * Number(match[3])) / 255;
+              return luminance < 0.45;
+            }
+          }
+          node = node.parentElement;
+        }
+      } catch {
+        /* treat unknown surfaces as light */
+      }
+      return false;
+    }
+
+    /**
+     * Markdown body editor for the article dialog, powered by the vendored
+     * Toast UI Editor: formatting toolbar, WYSIWYG by default, Markdown source
+     * mode and visual table editing, all localized to Chinese.
+     *
+     * While the assets load (or if they cannot), a plain textarea keeps the
+     * dialog usable.
+     *
+     * @param props - `{t, value, onChange, disabled}`.
+     * @returns Editor shell element.
+     */
+    function ToastMarkdownEditor({ t, value, onChange, disabled }) {
+      const hostRef = useRef(null);
+      const editorRef = useRef(null);
+      const lastMarkdown = useRef(String(value ?? ''));
+      const onChangeRef = useRef(onChange);
+      const [status, setStatus] = useState('loading');
+      const [error, setError] = useState(null);
+      const [attempt, setAttempt] = useState(0);
+
+      useEffect(() => {
+        onChangeRef.current = onChange;
+      }, [onChange]);
+
+      useEffect(() => {
+        let cancelled = false;
+        let editor = null;
+        let pasteTarget = null;
+        let onPaste = null;
+        let onInput = null;
+        let resizeObserver = null;
+        let fitHeightRef = { current: null };
+        let applyingShortcut = false;
+        setStatus('loading');
+        setError(null);
+        loadMarkdownEditor()
+          .then(({ Editor, darkStyle }) => {
+            if (cancelled || hostRef.current === null) return;
+            hostRef.current.innerHTML = '';
+            editor = new Editor({
+              el: hostRef.current,
+              height: '400px',
+              initialValue: lastMarkdown.current,
+              initialEditType: 'wysiwyg',
+              previewStyle: 'vertical',
+              language: 'zh-CN',
+              usageStatistics: false,
+              autofocus: false,
+              toolbarItems: EDITOR_TOOLBAR_ITEMS,
+            });
+            editorRef.current = editor;
+            editor.on('change', () => {
+              const markdown = editor.getMarkdown();
+              lastMarkdown.current = markdown;
+              onChangeRef.current(markdown);
+            });
+            // WYSIWYG mode does not parse pasted Markdown by itself (it is a
+            // rich-text surface). Convert pasted Markdown with Toast UI's own
+            // parser and insert the resulting rich content at the caret.
+            pasteTarget = hostRef.current;
+            onPaste = (event) => {
+              if (typeof editor.isWysiwygMode === 'function' && !editor.isWysiwygMode()) return;
+              const clipboard = event.clipboardData;
+              if (clipboard === null || clipboard === undefined) return;
+              const rich = clipboard.getData('text/html');
+              if (rich !== '' && /<(table|h[1-6]|ul|ol|pre|blockquote|p|strong|em)\b/i.test(rich)) return;
+              const plain = clipboard.getData('text/plain');
+              if (!looksLikeMarkdown(plain)) return;
+              const html = markdownToWysiwygHtml(plain);
+              if (html === null || html.trim() === '') return;
+              event.preventDefault();
+              event.stopPropagation();
+              try {
+                if (!document.execCommand('insertHTML', false, html)) return;
+              } catch {
+                return;
+              }
+              // execCommand mutates the ProseMirror DOM; re-read the model so
+              // the article state (and the Markdown round-trip) stays in sync.
+              globalThis.setTimeout?.(() => {
+                try {
+                  const markdown = editor.getMarkdown();
+                  lastMarkdown.current = markdown;
+                  onChangeRef.current(markdown);
+                } catch {
+                  /* editor already destroyed */
+                }
+              }, 0);
+            };
+            pasteTarget.addEventListener('paste', onPaste, true);
+            // Markdown-style typing shortcuts for the WYSIWYG surface: `# `
+            // becomes a heading, `- ` a list, `> ` a quote, and completed
+            // inline tokens (`**bold**`, `~~strike~~`, `` `code` ``, links)
+            // are converted at the caret. This keeps the WYSIWYG mode usable
+            // for people who are used to writing Markdown source.
+            const syncValue = () => {
+              try {
+                const markdown = editor.getMarkdown();
+                lastMarkdown.current = markdown;
+                onChangeRef.current(markdown);
+              } catch {
+                /* editor already destroyed */
+              }
+            };
+            let inlinePending = false;
+            const convertInlineNow = () => {
+              inlinePending = false;
+              if (applyingShortcut) return;
+              if (typeof editor.isWysiwygMode === 'function' && !editor.isWysiwygMode()) return;
+              const body = hostRef.current?.querySelector('.toastui-editor-ww-container .ProseMirror');
+              if (body === null || body === undefined) return;
+              const selection = globalThis.getSelection?.();
+              if (selection === null || selection === undefined || selection.rangeCount === 0 || !selection.isCollapsed) return;
+              const node = selection.anchorNode;
+              if (node === null || node === undefined || node.nodeType !== 3 || !body.contains(node)) return;
+              const parent = node.parentElement;
+              if (parent === null || parent === undefined) return;
+              if (parent.closest('pre, code, a') !== null) return;
+              const before = node.textContent.slice(0, selection.anchorOffset);
+              const inline = matchTypedInlineMarkdown(before);
+              if (inline === null) return;
+              const range = editor.getSelection();
+              if (range[0] !== range[1]) return;
+              // Positions are ProseMirror document offsets. A text node in a
+              // plain paragraph maps one-to-one to character offsets, so the
+              // token start is just `caret - (typed chars after the token)`.
+              const tokenStart = range[1] - (before.length - inline.start);
+              const tokenEnd = tokenStart + (inline.end - inline.start);
+              const contentStart = tokenStart + inline.delim;
+              const contentEnd = tokenEnd - inline.delim;
+              if (contentStart > contentEnd) return;
+              applyingShortcut = true;
+              try {
+                editor.setSelection(contentStart, contentEnd);
+                editor.exec(inline.command);
+                editor.setSelection(contentEnd, contentEnd + inline.delim);
+                editor.deleteSelection();
+                editor.setSelection(tokenStart, tokenStart + inline.delim);
+                editor.deleteSelection();
+                editor.setSelection(contentEnd - inline.delim, contentEnd - inline.delim);
+                // Leaving the caret at the end of a marked run makes ProseMirror
+                // inherit that mark for the next typed character; clear the
+                // stored marks so following text is not accidentally bold/italic.
+                const view = editor.getCurrentModeEditor?.()?.view;
+                if (view !== undefined && view !== null) {
+                  try {
+                    view.dispatch(view.state.tr.setStoredMarks([]));
+                  } catch {
+                    /* best effort */
+                  }
+                }
+                syncValue();
+              } catch {
+                /* leave the typed text alone */
+              } finally {
+                applyingShortcut = false;
+              }
+            };
+            const scheduleInlineConversion = () => {
+              if (inlinePending) return;
+              inlinePending = true;
+              globalThis.setTimeout?.(convertInlineNow, 0);
+            };
+            onInput = (event) => {
+              if (applyingShortcut) return;
+              if (event.isComposing === true) return;
+              if (typeof editor.isWysiwygMode === 'function' && !editor.isWysiwygMode()) return;
+              if (typeof event.inputType === 'string' && !event.inputType.startsWith('insert')) return;
+              const body = hostRef.current?.querySelector('.toastui-editor-ww-container .ProseMirror');
+              if (body === null || body === undefined) return;
+              const selection = globalThis.getSelection?.();
+              if (selection === null || selection === undefined || selection.rangeCount === 0 || !selection.isCollapsed) return;
+              const node = selection.anchorNode;
+              if (node === null || node === undefined || node.nodeType !== 3 || !body.contains(node)) return;
+              const caret = selection.anchorOffset;
+              const before = node.textContent.slice(0, caret);
+              const parent = node.parentElement;
+              if (parent === null || parent === undefined) return;
+              if (parent.closest('pre, code, a') !== null) return;
+
+              // Block prefixes typed at the very start of a paragraph.
+              const block = /^(#{1,6}|[-*+]|\d+[.)]|>)\s$/.exec(before);
+              if (block !== null && node.previousSibling === null && parent.tagName === 'P') {
+                const marker = block[1];
+                const markerLength = block[0].length;
+                const range = editor.getSelection();
+                applyingShortcut = true;
+                try {
+                  editor.setSelection(range[0] - markerLength, range[1]);
+                  editor.deleteSelection();
+                  if (marker.startsWith('#')) editor.exec('heading', { level: marker.length });
+                  else if (marker === '>') editor.exec('blockQuote');
+                  else if (/^\d/.test(marker)) editor.exec('orderedList');
+                  else editor.exec('bulletList');
+                  syncValue();
+                } catch {
+                  /* leave the typed text alone */
+                } finally {
+                  applyingShortcut = false;
+                }
+                return;
+              }
+
+              // Completed inline tokens are converted after ProseMirror has
+              // finished handling the current input event; mutating the DOM
+              // from inside the event makes ProseMirror discard the inserted
+              // marks. Re-read the caret in the deferred pass.
+              if (before.length === 0) return;
+              scheduleInlineConversion();
+            };
+            pasteTarget.addEventListener('input', onInput, true);
+            // The shell is a flex item that fills the article body; keep the
+            // editor (which Toast UI sizes with inline pixels) matched to it.
+            const fitHeight = () => {
+              const host = hostRef.current;
+              if (host === null || host === undefined) return;
+              const height = Math.round(host.getBoundingClientRect().height);
+              if (height < 200) return;
+              try {
+                editor.setHeight(`${height}px`);
+              } catch {
+                /* editor already destroyed */
+              }
+            };
+            fitHeightRef.current = fitHeight;
+            fitHeight();
+            if (typeof globalThis.ResizeObserver === 'function') {
+              resizeObserver = new globalThis.ResizeObserver(fitHeight);
+              resizeObserver.observe(hostRef.current);
+            }
+            globalThis.addEventListener?.('resize', fitHeight);
+            if (darkSurface(hostRef.current)) {
+              void ensureEditorStyle(darkStyle, 'toastui-dark').then(() => {
+                const chrome = hostRef.current?.querySelector('.toastui-editor-defaultUI');
+                if (chrome !== null && chrome !== undefined) chrome.classList.add('toastui-editor-dark');
+              });
+            }
+            if (!cancelled) setStatus('ready');
+          })
+          .catch((failure) => {
+            if (cancelled) return;
+            setError(failure instanceof Error ? failure : new Error(String(failure)));
+            setStatus('error');
+          });
+        return () => {
+          cancelled = true;
+          if (editor !== null) {
+            try {
+              editor.destroy();
+            } catch {
+              /* the editor may already be gone */
+            }
+          }
+          editorRef.current = null;
+          if (pasteTarget !== null && onPaste !== null) {
+            pasteTarget.removeEventListener('paste', onPaste, true);
+          }
+          if (pasteTarget !== null && onInput !== null) {
+            pasteTarget.removeEventListener('input', onInput, true);
+          }
+          if (resizeObserver !== null) resizeObserver.disconnect();
+          globalThis.removeEventListener?.('resize', fitHeightRef.current ?? (() => {}));
+        };
+      }, [attempt]);
+
+      // External resets (e.g. reopening on another article) update the editor
+      // without fighting the change events that feed `onChange`.
+      useEffect(() => {
+        const next = String(value ?? '');
+        const editor = editorRef.current;
+        if (editor === null || next === lastMarkdown.current) return;
+        lastMarkdown.current = next;
+        try {
+          editor.setMarkdown(next, false);
+        } catch {
+          /* ignore a destroyed instance */
+        }
+      }, [value]);
+
+      return h(
+        'div',
+        { className: 'wkn-md-shell', 'data-busy': disabled === true ? 'true' : 'false' },
+        status === 'loading'
+          ? h(
+              'div',
+              { className: 'wkn-md-loading' },
+              h('span', { className: 'wkn-md-spinner', 'aria-hidden': true }),
+              h('span', null, t('editorLoading')),
+            )
+          : null,
+        status === 'error'
+          ? h(
+              React.Fragment,
+              null,
+              h('div', { className: 'wkn-note', 'data-kind': 'error' }, t('editorLoadFailed')),
+              h(
+                'div',
+                { className: 'wkn-actions' },
+                h(
+                  'button',
+                  { type: 'button', className: 'wkn-btn', onClick: () => setAttempt((current) => current + 1) },
+                  t('editorRetry'),
+                ),
+              ),
+              h('textarea', {
+                className: 'wkn-textarea',
+                value: String(value ?? ''),
+                spellCheck: false,
+                disabled: disabled === true,
+                placeholder: t('editorFallbackPlaceholder'),
+                onChange: (event) => onChange(event.target.value),
+              }),
+              error === null ? null : h('div', { className: 'wkn-meta' }, String(error.message ?? error)),
+            )
+          : null,
+        h('div', {
+          className: 'wkn-toastui',
+          ref: hostRef,
+          style: status === 'error' ? { display: 'none' } : undefined,
+        }),
+      );
+    }
+
+    //#endregion
+
     /**
      * Create-knowledge-base dialog.
      * @param props - `{t, busy, onClose, onSubmit}`.
@@ -2127,11 +2716,11 @@ window.__ModuleLoader__.load({
           'div',
           { className: 'wkn-field' },
           h('label', null, t('fieldContent')),
-          h('textarea', {
-            className: 'wkn-textarea',
+          h(ToastMarkdownEditor, {
+            t,
             value: content,
-            spellCheck: false,
-            onChange: (event) => setContent(event.target.value),
+            onChange: setContent,
+            disabled: busy,
           }),
         ),
         h('div', { className: 'wkn-hint' }, t('articleHint')),
@@ -2617,6 +3206,101 @@ window.__ModuleLoader__.load({
       .wkn-kb-mention-label{max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     `;
 
+    /** Canonical prefix for a WeKnora document reference chip. */
+    const DOC_MENTION_PREFIX = 'weknora:doc/';
+    /** Input-trigger source name that owns document chips (also their user-text rule id). */
+    const DOC_SOURCE = 'weknora-doc';
+    /** Document glyph used by the chip and the picker rows. */
+    const DOC_ICON = 'M3.5 1.75h5.2l3.05 3.05v9.45H3.5zM8.7 1.75v3.05h3.05';
+
+    /**
+     * Make a display label safe for the `@[label](...)` mention grammar.
+     * @param label - Raw display name.
+     * @param fallback - Used when the sanitized label is empty.
+     * @returns A single-line label without brackets.
+     */
+    function mentionLabel(label, fallback) {
+      const safe = String(label ?? '')
+        .replace(/[\]\[\r\n]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      return safe === '' ? fallback : safe;
+    }
+
+    /**
+     * Canonical document chip text inserted by the + menu picker and read back
+     * by the host. The knowledge-base and document ids are percent-encoded
+     * separately so a `/` inside an id cannot blur the two segments.
+     * @param kbId - Knowledge-base id.
+     * @param docId - Document (`knowledge`) id.
+     * @param label - Display name.
+     * @returns `@[name](weknora:doc/<encoded kb>/<encoded doc>)`.
+     */
+    function formatDocumentMention(kbId, docId, label) {
+      return `@[${mentionLabel(label, '文件')}](${DOC_MENTION_PREFIX}${encodeURIComponent(String(kbId))}/${encodeURIComponent(String(docId))})`;
+    }
+
+    /**
+     * Build the structured reference inserted into the composer for one picked
+     * document. `source` must name a registered input-trigger source whose
+     * codec serializes the ref verbatim; otherwise submit throws.
+     * @param doc - `{kbId, id, title}` picked document.
+     * @returns Reference-insert payload.
+     */
+    function documentChip(doc) {
+      const ref = formatDocumentMention(doc.kbId, doc.id, doc.title);
+      return {
+        source: DOC_SOURCE,
+        ref,
+        label: mentionLabel(doc.title, '文件'),
+        appearance: 'file',
+        clipboardText: ref,
+      };
+    }
+
+    /**
+     * User-text rule matching a canonical WeKnora document mention in a sent
+     * message. Mirrors `KB_USER_TEXT_RULE`, but for `weknora:doc/<kb>/<doc>`.
+     */
+    const DOC_USER_TEXT_RULE = {
+      id: DOC_SOURCE,
+      order: 26,
+      match(text, from) {
+        const pattern = /@\[([^\]\n]+)\]\(weknora:doc\/([^/)\s]+)\/([^)\s]+)\)/gu;
+        pattern.lastIndex = from;
+        const match = pattern.exec(text);
+        if (match === null) return undefined;
+        const decode = (value) => {
+          try {
+            return decodeURIComponent(value);
+          } catch {
+            return value;
+          }
+        };
+        return {
+          id: DOC_SOURCE,
+          start: match.index,
+          end: match.index + match[0].length,
+          data: { label: match[1], kbId: decode(match[2]), id: decode(match[3]) },
+        };
+      },
+    };
+
+    /**
+     * Non-interactive chip for an added WeKnora document in a sent message.
+     * @param props - `{node, raw}` from the user-text renderer.
+     * @returns Chip element.
+     */
+    function DocumentMentionChip({ node, raw }) {
+      return h(
+        'span',
+        { className: 'wkn-kb-mention', title: raw },
+        h('style', null, KB_MENTION_STYLES),
+        h(Glyph, { size: 12, path: DOC_ICON }),
+        h('span', { className: 'wkn-kb-mention-label' }, node?.data?.label ?? ''),
+      );
+    }
+
     /** Upload glyph used by the workspace-file shortcut. */
     const UPLOAD_ICON =
       'M8 10.5V2.75M8 2.75 5.25 5.5M8 2.75l2.75 2.75M2.75 10.5v1.75c0 .55.45 1 1 1h8.5c.55 0 1-.45 1-1V10.5';
@@ -2858,6 +3542,572 @@ window.__ModuleLoader__.load({
           : null,
       );
     }
+
+    //#region document-picker
+
+    /** Page size requested from `/knowledge-bases/:id/knowledge` by the picker. */
+    const PICKER_PAGE_SIZE = 100;
+
+    /**
+     * One pending "+ menu → WeKnora files" request. The command action only
+     * records the request; the per-session composer overlay owns the dialog and
+     * the insertion, because only that component receives the standard
+     * `inputActions` face used to capture a revision-guarded insertion span.
+     */
+    const pickerHub = { request: null, seq: 0, listeners: new Set() };
+
+    /** Notify every mounted overlay that the pending request changed. */
+    function notifyPickerListeners() {
+      for (const listener of pickerHub.listeners) {
+        try {
+          listener();
+        } catch {
+          /* one stale listener must not block the menu or the dialog */
+        }
+      }
+    }
+
+    /**
+     * Ask the addressed session's composer overlay to open the document picker.
+     * @param sessionId - Session whose composer receives the chips.
+     */
+    function openDocumentPicker(sessionId) {
+      if (typeof sessionId !== 'string' || sessionId === '') return;
+      pickerHub.seq += 1;
+      pickerHub.request = { sessionId, seq: pickerHub.seq };
+      notifyPickerListeners();
+    }
+
+    /**
+     * Close the picker for one request; a newer request is left untouched.
+     * @param seq - Request sequence to close (omitted closes any request).
+     */
+    function closeDocumentPicker(seq) {
+      if (pickerHub.request === null) return;
+      if (seq !== undefined && pickerHub.request.seq !== seq) return;
+      pickerHub.request = null;
+      notifyPickerListeners();
+    }
+
+    /**
+     * Subscribe to pending-picker changes (used by the overlay component).
+     * @param listener - Called after every request change.
+     * @returns Unsubscribe function.
+     */
+    function subscribeDocumentPicker(listener) {
+      pickerHub.listeners.add(listener);
+      return () => {
+        pickerHub.listeners.delete(listener);
+      };
+    }
+
+    /**
+     * Read the knowledge bases the picker can browse.
+     * @param signal - Cancellation.
+     * @returns Normalized knowledge-base records.
+     */
+    async function fetchPickerKnowledgeBases(signal) {
+      const payload = await call('/api/v1/knowledge-bases', { signal });
+      return readKnowledgeBases(payload).filter((kb) => kb.id !== '');
+    }
+
+    /**
+     * Read one page of documents for the picker.
+     * @param kbId - Knowledge base to list.
+     * @param keyword - Server-side title/file-name filter (`''` = no filter).
+     * @param page - 1-based page number.
+     * @param signal - Cancellation.
+     * @returns `{total, documents}`.
+     */
+    async function fetchPickerDocuments(kbId, keyword, page, signal) {
+      const search = new URLSearchParams({ page: String(page), page_size: String(PICKER_PAGE_SIZE) });
+      if (keyword !== '') search.set('keyword', keyword);
+      const payload = await call(
+        `/api/v1/knowledge-bases/${encodeURIComponent(kbId)}/knowledge?${search.toString()}`,
+        { signal },
+      );
+      return readKnowledgeList(payload);
+    }
+
+    /** Parse-state keys the picker shows next to a document title. */
+    const PICKER_STATUS_KEYS = {
+      completed: 'pickerStatusCompleted',
+      processing: 'pickerStatusProcessing',
+      pending: 'pickerStatusPending',
+      failed: 'pickerStatusFailed',
+    };
+
+    /**
+     * Insert one reference chip per picked document into the addressed composer.
+     *
+     * The span is captured immediately before each insertion: every applied
+     * chip bumps the draft revision, so a span captured once would fail the
+     * revision check for the second document. `inputActions.captureInsertion`
+     * is the public provide-channel path; the shell fallback keeps the feature
+     * working in deployments that do not hand `inputActions` to overlay slots.
+     *
+     * @param ctx - Client root context.
+     * @param sessionId - Session whose composer receives the chips.
+     * @param documents - Picked documents (`{kbId, id, title}`).
+     * @param inputActions - Optional standard `inputActions` prop from a slot.
+     * @returns `{inserted, unavailable}`.
+     */
+    function insertDocumentChips(ctx, sessionId, documents, inputActions) {
+      const read = (key) => {
+        try {
+          return ctx.get(key);
+        } catch {
+          return undefined;
+        }
+      };
+      const input = read('conversation')?.input;
+      if (input === undefined) return { inserted: 0, unavailable: true };
+      let sessionInput;
+      try {
+        const sessions = read('sessions');
+        const actx = typeof sessions?.scope === 'function' ? sessions.scope(sessionId) : undefined;
+        if (actx !== undefined && typeof input.for === 'function') sessionInput = input.for(actx);
+      } catch {
+        /* fall back to the input shell below */
+      }
+      let shell;
+      try {
+        shell = typeof input.shell === 'function' ? input.shell(sessionId) : undefined;
+      } catch {
+        shell = undefined;
+      }
+      const capture = () => {
+        if (typeof inputActions?.captureInsertion === 'function') {
+          try {
+            return inputActions.captureInsertion();
+          } catch {
+            /* fall through to the shell */
+          }
+        }
+        if (shell !== undefined && typeof shell.caretSpan === 'function') {
+          return { ...shell.caretSpan(), draftRev: shell.rev };
+        }
+        return undefined;
+      };
+      const apply = (ref, span) => {
+        try {
+          if (sessionInput !== undefined && typeof sessionInput.insertReference === 'function') {
+            return sessionInput.insertReference(ref, span) === true;
+          }
+          if (shell !== undefined && typeof shell.insertReference === 'function') {
+            return shell.insertReference(ref, span) === true;
+          }
+        } catch {
+          /* a phase or span refusal surfaces as "not inserted" */
+        }
+        return false;
+      };
+      let inserted = 0;
+      for (const document of documents) {
+        const span = capture();
+        if (span === undefined || !Number.isFinite(span.draftRev)) break;
+        if (!apply(documentChip(document), span)) break;
+        inserted += 1;
+      }
+      return { inserted, unavailable: false };
+    }
+
+    /**
+     * The dialog body: browse a knowledge base on the left, tick documents on
+     * the right. Selections survive switching knowledge bases so one message
+     * can mix files from several libraries.
+     * @param props - `{sessionId, inputActions, env, onClose}`.
+     * @returns Dialog element.
+     */
+    function WeKnoraDocumentPickerDialog({ sessionId, inputActions, env, onClose }) {
+      const t = env.text;
+      const [kbs, setKbs] = useState(null);
+      const [kbError, setKbError] = useState(null);
+      const [activeKbId, setActiveKbId] = useState(null);
+      const [docs, setDocs] = useState([]);
+      const [docTotal, setDocTotal] = useState(0);
+      const [docPage, setDocPage] = useState(1);
+      const [docLoading, setDocLoading] = useState(false);
+      const [docError, setDocError] = useState(null);
+      const [query, setQuery] = useState('');
+      const [selected, setSelected] = useState(() => new Map());
+      const [busy, setBusy] = useState(false);
+      const [notice, setNotice] = useState(null);
+      const [reload, setReload] = useState(0);
+
+      useEffect(() => {
+        let cancelled = false;
+        const controller = typeof AbortController === 'function' ? new AbortController() : undefined;
+        setKbError(null);
+        setKbs(null);
+        fetchPickerKnowledgeBases(controller?.signal)
+          .then((items) => {
+            if (cancelled) return;
+            setKbs(items);
+            setActiveKbId((current) => {
+              if (current !== null && items.some((kb) => kb.id === current)) return current;
+              return items[0]?.id ?? null;
+            });
+          })
+          .catch((failure) => {
+            if (cancelled || failure?.name === 'AbortError') return;
+            setKbs([]);
+            setKbError(failure instanceof Error ? failure.message : String(failure));
+          });
+        return () => {
+          cancelled = true;
+          controller?.abort();
+        };
+      }, [reload]);
+
+      useEffect(() => {
+        if (activeKbId === null) return undefined;
+        let cancelled = false;
+        const controller = typeof AbortController === 'function' ? new AbortController() : undefined;
+        setDocLoading(true);
+        setDocError(null);
+        setDocs([]);
+        setDocTotal(0);
+        setDocPage(1);
+        const timer = setTimeout(() => {
+          fetchPickerDocuments(activeKbId, query.trim(), 1, controller?.signal)
+            .then((result) => {
+              if (cancelled) return;
+              setDocs(result.documents);
+              setDocTotal(result.total);
+              setDocPage(1);
+            })
+            .catch((failure) => {
+              if (cancelled || failure?.name === 'AbortError') return;
+              setDocError(failure instanceof Error ? failure.message : String(failure));
+            })
+            .finally(() => {
+              if (!cancelled) setDocLoading(false);
+            });
+        }, 200);
+        return () => {
+          cancelled = true;
+          clearTimeout(timer);
+          controller?.abort();
+        };
+      }, [activeKbId, query, reload]);
+
+      const activeKb = (kbs ?? []).find((kb) => kb.id === activeKbId) ?? null;
+
+      // Selections are keyed by (kb, doc) so the same document in two
+      // knowledge bases stays an independent choice.
+      const selectionKey = (kbId, docId) => `${kbId}\u0000${docId}`;
+
+      const toggleDocument = useCallback((kb, doc) => {
+        setSelected((current) => {
+          const next = new Map(current);
+          const key = selectionKey(kb.id, doc.id);
+          if (next.has(key)) next.delete(key);
+          else next.set(key, { kbId: kb.id, kbName: kb.name, id: doc.id, title: doc.title });
+          return next;
+        });
+      }, []);
+
+      const loadMore = useCallback(async () => {
+        if (activeKbId === null || docLoading) return;
+        const nextPage = docPage + 1;
+        setDocLoading(true);
+        setDocError(null);
+        try {
+          const result = await fetchPickerDocuments(activeKbId, query.trim(), nextPage);
+          setDocs((current) => [...current, ...result.documents]);
+          setDocTotal(result.total);
+          setDocPage(nextPage);
+        } catch (failure) {
+          setDocError(failure instanceof Error ? failure.message : String(failure));
+        } finally {
+          setDocLoading(false);
+        }
+      }, [activeKbId, docLoading, docPage, query]);
+
+      const submit = useCallback(async () => {
+        if (selected.size === 0 || busy) return;
+        const chosen = [...selected.values()];
+        setBusy(true);
+        setNotice(null);
+        const result = env.insertDocuments(sessionId, chosen, inputActions);
+        if (result.inserted === chosen.length) {
+          setBusy(false);
+          onClose();
+          env.focusComposer(sessionId);
+          return;
+        }
+        if (result.inserted > 0) {
+          const rest = chosen.slice(result.inserted);
+          setSelected(new Map(rest.map((document) => [selectionKey(document.kbId, document.id), document])));
+        }
+        setNotice({
+          kind: 'error',
+          text: result.inserted === 0
+            ? t('pickerInsertFailed')
+            : t('pickerInsertPartial', { inserted: result.inserted, total: chosen.length }),
+        });
+        setBusy(false);
+      }, [busy, env, inputActions, onClose, selected, sessionId, t]);
+
+      const kbNodes = [];
+      if (kbError !== null) {
+        kbNodes.push(
+          h(
+            'div',
+            { key: 'kb-error', className: 'wkn-pick-state', 'data-kind': 'error' },
+            t('pickerKbFailed'),
+            h(
+              'button',
+              { type: 'button', className: 'wkn-pick-more', onClick: () => setReload(reload + 1) },
+              t('pickerRetry'),
+            ),
+          ),
+        );
+      } else if (kbs === null) {
+        kbNodes.push(h('div', { key: 'kb-loading', className: 'wkn-pick-state' }, t('pickerLoading')));
+      } else if (kbs.length === 0) {
+        kbNodes.push(h('div', { key: 'kb-empty', className: 'wkn-pick-state' }, t('pickerNoKbs')));
+      } else {
+        for (const kb of kbs) {
+          kbNodes.push(
+            h(
+              'button',
+              {
+                key: kb.id,
+                type: 'button',
+                className: 'wkn-pick-kb',
+                'data-on': kb.id === activeKbId ? 'true' : 'false',
+                'aria-selected': kb.id === activeKbId ? 'true' : 'false',
+                role: 'option',
+                onClick: () => setActiveKbId(kb.id),
+              },
+              h('span', { className: 'wkn-pick-kb-name' }, kb.name),
+              h('span', { className: 'wkn-pick-kb-count' }, t('pickerKbCount', { count: Number.isFinite(kb.count) ? kb.count : 0 })),
+            ),
+          );
+        }
+      }
+
+      const docNodes = [];
+      if (docError !== null) {
+        docNodes.push(
+          h(
+            'div',
+            { key: 'doc-error', className: 'wkn-pick-state', 'data-kind': 'error' },
+            t('pickerDocFailed', { error: docError }),
+            h(
+              'button',
+              { type: 'button', className: 'wkn-pick-more', onClick: () => setReload(reload + 1) },
+              t('pickerRetry'),
+            ),
+          ),
+        );
+      } else if (activeKbId === null) {
+        docNodes.push(h('div', { key: 'doc-idle', className: 'wkn-pick-state' }, t('pickerChooseKb')));
+      } else if (docLoading && docs.length === 0) {
+        docNodes.push(h('div', { key: 'doc-loading', className: 'wkn-pick-state' }, t('pickerLoadingDocs')));
+      } else if (docs.length === 0) {
+        docNodes.push(
+          h(
+            'div',
+            { key: 'doc-empty', className: 'wkn-pick-state' },
+            query.trim() === '' ? t('pickerNoDocs') : t('pickerNoMatch'),
+          ),
+        );
+      } else if (activeKb !== null) {
+        for (const doc of docs) {
+          const checked = selected.has(selectionKey(activeKb.id, doc.id));
+          const meta = [
+            doc.fileType === '' ? '' : doc.fileType.toUpperCase().slice(0, 6),
+            formatSize(doc.size),
+            PICKER_STATUS_KEYS[doc.status] === undefined ? '' : t(PICKER_STATUS_KEYS[doc.status]),
+          ].filter((part) => part !== '');
+          docNodes.push(
+            h(
+              'button',
+              {
+                key: doc.id,
+                type: 'button',
+                className: 'wkn-pick-row',
+                'data-checked': checked ? 'true' : 'false',
+                role: 'checkbox',
+                'aria-checked': checked ? 'true' : 'false',
+                onClick: () => toggleDocument(activeKb, doc),
+              },
+              h('span', { className: 'wkn-pick-check', 'aria-hidden': 'true' }, checked ? '✓' : ''),
+              h(
+                'span',
+                { className: 'wkn-pick-doc-main' },
+                h('span', { className: 'wkn-pick-doc-name' }, doc.title),
+                meta.length === 0 ? null : h('span', { className: 'wkn-pick-doc-meta' }, meta.join(' · ')),
+              ),
+            ),
+          );
+        }
+        if (docs.length < docTotal) {
+          docNodes.push(
+            h(
+              'button',
+              {
+                key: 'doc-more',
+                type: 'button',
+                className: 'wkn-pick-more',
+                disabled: docLoading,
+                onClick: () => void loadMore(),
+              },
+              docLoading ? t('pickerLoadingDocs') : t('pickerMore', { count: Math.max(0, docTotal - docs.length) }),
+            ),
+          );
+        }
+      }
+
+      return h(
+        'div',
+        {
+          className: 'wkn-pick-backdrop',
+          onMouseDown: (event) => {
+            if (event.target === event.currentTarget) onClose();
+          },
+        },
+        h('style', null, PICKER_STYLES),
+        h(
+          'div',
+          { className: 'wkn-pick', role: 'dialog', 'aria-modal': 'true', 'aria-label': t('pickerTitle') },
+          h(
+            'div',
+            { className: 'wkn-pick-head' },
+            h(Glyph, { size: 16, path: DOC_ICON }),
+            h('span', { className: 'wkn-pick-title' }, t('pickerTitle')),
+            h('button', { type: 'button', className: 'wkn-pick-close', 'aria-label': t('pickerCancel'), onClick: onClose }, '✕'),
+          ),
+          h(
+            'div',
+            { className: 'wkn-pick-body' },
+            h('div', { className: 'wkn-pick-kbs', role: 'listbox', 'aria-label': t('pickerKbList') }, kbNodes),
+            h(
+              'div',
+              { className: 'wkn-pick-main' },
+              h('input', {
+                className: 'wkn-pick-search',
+                type: 'search',
+                value: query,
+                placeholder: t('pickerSearchPlaceholder'),
+                'aria-label': t('pickerSearchPlaceholder'),
+                onChange: (event) => setQuery(event.target.value),
+              }),
+              h('div', { className: 'wkn-pick-list', role: 'group', 'aria-label': t('pickerDocs') }, docNodes),
+            ),
+          ),
+          h(
+            'div',
+            { className: 'wkn-pick-foot' },
+            h(
+              'span',
+              { className: 'wkn-pick-foot-count' },
+              selected.size > 0 ? t('pickerSelected', { count: selected.size }) : '',
+            ),
+            notice === null
+              ? null
+              : h('span', { className: 'wkn-pick-notice', 'data-kind': notice.kind }, notice.text),
+            h('button', { type: 'button', className: 'wkn-pick-btn', onClick: onClose }, t('pickerCancel')),
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'wkn-pick-btn',
+                'data-variant': 'primary',
+                disabled: selected.size === 0 || busy,
+                onClick: () => void submit(),
+              },
+              selected.size === 0 ? t('pickerAddNone') : t('pickerAddCount', { count: selected.size }),
+            ),
+          ),
+        ),
+      );
+    }
+
+    /**
+     * Composer-overlay entry: mounts the picker dialog for the addressed
+     * session when the + menu asked for it, and renders nothing otherwise.
+     * @param props - Session-scope slot props plus the injected environment.
+     * @returns Picker element or null.
+     */
+    function WeKnoraDocumentPicker(props) {
+      const [request, setRequest] = useState(() => pickerHub.request);
+      useEffect(() => subscribeDocumentPicker(() => setRequest(pickerHub.request)), []);
+      if (request === null) return null;
+      if (props.sessionId !== undefined && props.sessionId !== request.sessionId) return null;
+      return h(WeKnoraDocumentPickerDialog, {
+        key: request.seq,
+        sessionId: request.sessionId,
+        inputActions: props.inputActions,
+        env: props.env,
+        onClose: () => closeDocumentPicker(request.seq),
+      });
+    }
+
+    /** Styles for the picker dialog (rendered in the composer overlay, outside the panel). */
+    const PICKER_STYLES = `
+      .wkn-pick-backdrop{position:fixed;inset:0;z-index:90;display:flex;align-items:center;justify-content:center;
+        padding:24px;background:var(--dsw-alias-bg-mask-2,#0003)}
+      .wkn-pick{width:min(780px,95vw);height:min(560px,86vh);display:flex;flex-direction:column;border-radius:24px;
+        background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);overflow:hidden;
+        box-shadow:0 0 0 .5px rgba(0,0,0,.16),0 3px 8px rgba(0,0,0,.04),0 0 20px rgba(0,0,0,.05)}
+      .wkn-pick-head{display:flex;align-items:center;gap:8px;padding:18px 20px 0}
+      .wkn-pick-title{font-size:16px;line-height:24px;font-weight:500}
+      .wkn-pick-close{margin-left:auto;width:32px;height:32px;border:none;border-radius:12px;background:transparent;
+        color:var(--dsw-alias-label-secondary);font:inherit;font-size:14px;cursor:pointer}
+      .wkn-pick-close:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+      .wkn-pick-body{display:flex;flex:1 1 auto;min-height:0;padding:14px 20px 0}
+      .wkn-pick-kbs{width:220px;flex:0 0 220px;overflow:auto;display:flex;flex-direction:column;gap:2px;
+        padding-right:10px;border-right:1px solid var(--dsw-alias-border-l1)}
+      .wkn-pick-kb{display:flex;align-items:center;gap:8px;min-height:32px;padding:6px 10px;border:none;border-radius:10px;
+        background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;line-height:20px;
+        text-align:left;cursor:pointer;width:100%}
+      .wkn-pick-kb:hover{background:var(--dsw-alias-interactive-bg-hover)}
+      .wkn-pick-kb[data-on="true"]{background:var(--dsw-alias-interactive-bg-hover);font-weight:500}
+      .wkn-pick-kb-name{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .wkn-pick-kb-count{flex:0 0 auto;color:var(--dsw-alias-label-tertiary);font-size:12px}
+      .wkn-pick-main{flex:1 1 auto;min-width:0;min-height:0;display:flex;flex-direction:column;gap:8px;padding-left:14px}
+      .wkn-pick-search{flex:0 0 auto;height:32px;padding:0 10px;border-radius:10px;outline:none;
+        border:1px solid var(--dsw-alias-border-l3);background:transparent;color:inherit;font:inherit;font-size:13px}
+      .wkn-pick-search:focus{border-color:#4176e6}
+      .wkn-pick-list{flex:1 1 auto;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:2px;padding-bottom:6px}
+      .wkn-pick-row{display:flex;align-items:center;gap:10px;min-height:44px;padding:6px 10px;border:none;border-radius:10px;
+        background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;width:100%}
+      .wkn-pick-row:hover{background:var(--dsw-alias-interactive-bg-hover)}
+      .wkn-pick-row[data-checked="true"]{background:var(--dsw-alias-interactive-bg-hover)}
+      .wkn-pick-check{flex:0 0 auto;width:18px;height:18px;border-radius:6px;border:1px solid var(--dsw-alias-border-l3);
+        display:inline-flex;align-items:center;justify-content:center;font-size:12px;line-height:1;color:transparent}
+      .wkn-pick-row[data-checked="true"] .wkn-pick-check{border-color:var(--dsw-alias-label-primary);
+        background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-base)}
+      .wkn-pick-doc-main{flex:1 1 auto;min-width:0;display:flex;flex-direction:column}
+      .wkn-pick-doc-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;line-height:20px}
+      .wkn-pick-doc-meta{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+        color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}
+      .wkn-pick-more{margin-top:4px;align-self:flex-start;height:32px;padding:0 10px;border:none;border-radius:10px;
+        background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;cursor:pointer}
+      .wkn-pick-more:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+      .wkn-pick-more:disabled{opacity:.55;cursor:default}
+      .wkn-pick-state{padding:10px;color:var(--dsw-alias-label-tertiary);font-size:13px;line-height:20px;
+        overflow-wrap:anywhere;display:flex;flex-direction:column;align-items:flex-start;gap:4px}
+      .wkn-pick-state[data-kind="error"]{color:var(--dsw-alias-state-error-primary)}
+      .wkn-pick-foot{display:flex;align-items:center;gap:8px;padding:14px 20px 18px}
+      .wkn-pick-foot-count{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+        color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px}
+      .wkn-pick-notice{max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+        color:var(--dsw-alias-state-error-primary);font-size:12px;line-height:20px}
+      .wkn-pick-btn{height:32px;padding:0 12px;border:none;border-radius:12px;background:transparent;
+        color:var(--dsw-alias-label-secondary);font:inherit;font-size:13px;line-height:20px;cursor:pointer;white-space:nowrap}
+      .wkn-pick-btn:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+      .wkn-pick-btn:disabled{opacity:.5;cursor:default}
+      .wkn-pick-btn[data-variant="primary"]{background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-base)}
+      .wkn-pick-btn[data-variant="primary"]:hover:not(:disabled){background:var(--dsw-alias-label-primary);
+        color:var(--dsw-alias-bg-base);opacity:.9}
+    `;
+
+    //#endregion
 
     /**
      * The knowledge-base page rendered in the main area.
@@ -4222,8 +5472,6 @@ window.__ModuleLoader__.load({
       );
     }
 
-    //#endregion
-
     return {
       inject: ['slots', 'locale'],
       /**
@@ -4253,6 +5501,16 @@ window.__ModuleLoader__.load({
         KB_USER_TEXT_RULE,
         formatKnowledgeBaseMention,
         knowledgeBaseCandidates,
+        DocumentMentionChip,
+        DOC_USER_TEXT_RULE,
+        formatDocumentMention,
+        documentChip,
+        WeKnoraDocumentPicker,
+        WeKnoraDocumentPickerDialog,
+        openDocumentPicker,
+        closeDocumentPicker,
+        insertDocumentChips,
+        pickerHub,
         readKnowledgeBases,
         formatSize,
         relativeTime,
@@ -4265,6 +5523,11 @@ window.__ModuleLoader__.load({
         parseMarkdown,
         renderInline,
         Markdown,
+        editorAssetUrls,
+        looksLikeMarkdown,
+        matchTypedInlineMarkdown,
+        ToastMarkdownEditor,
+        ArticleEditor,
         KnowledgeCard,
         DocumentRow,
         DocumentPanel,
@@ -4410,6 +5673,10 @@ window.__ModuleLoader__.load({
                 fieldTitle: '标题',
                 fieldContent: '正文（Markdown）',
                 articleHint: '「草稿」不会进入检索；「发布」会排队解析并建立索引。保存后可在文档列表里看到。',
+                editorLoading: '正在加载 Markdown 编辑器…',
+                editorLoadFailed: 'Markdown 编辑器加载失败，已切换为纯文本编辑；保存仍然可用。',
+                editorRetry: '重试加载编辑器',
+                editorFallbackPlaceholder: '在此撰写 Markdown…',
                 statusDraft: '草稿',
                 statusPublish: '发布',
                 articleCreated: '文章已创建，正在排队解析。',
@@ -4456,6 +5723,33 @@ window.__ModuleLoader__.load({
                 uploadCount: '{count} 篇',
                 mentionSection: 'WeKnora 知识库',
                 mentionCount: '{count} 篇',
+                pickerMenuLabel: 'WeKnora 文件',
+                pickerMenuDescription: '从知识库挑选几个文件加入这条消息',
+                pickerTitle: '从 WeKnora 添加文件',
+                pickerKbList: '知识库',
+                pickerDocs: '文件',
+                pickerSearchPlaceholder: '搜索文件标题…',
+                pickerLoading: '正在读取知识库…',
+                pickerLoadingDocs: '正在读取文件…',
+                pickerKbFailed: '读取知识库失败。',
+                pickerDocFailed: '读取文件失败：{error}',
+                pickerRetry: '重试',
+                pickerNoKbs: '这个部署没有可用的知识库。',
+                pickerNoDocs: '这个知识库还没有文件。',
+                pickerNoMatch: '没有匹配的文件。',
+                pickerChooseKb: '从左侧选择一个知识库。',
+                pickerKbCount: '{count} 篇',
+                pickerSelected: '已选 {count} 个文件',
+                pickerAddNone: '添加',
+                pickerAddCount: '添加 {count} 个文件',
+                pickerCancel: '取消',
+                pickerMore: '加载更多（还有 {count} 个）',
+                pickerInsertFailed: '无法插入到输入框：当前输入框不可编辑，或没有可用的会话。',
+                pickerInsertPartial: '只插入了 {inserted}/{total} 个文件，请重试剩余的。',
+                pickerStatusCompleted: '可检索',
+                pickerStatusProcessing: '解析中',
+                pickerStatusPending: '待解析',
+                pickerStatusFailed: '解析失败',
                 workspaceUploaded: '已上传到「{name}」',
                 workspaceTooLarge: '文件超过 DSH 读取上限（默认 20 MiB），无法从工作区上传。',
                 workspaceForbidden: '没有权限读取该文件。',
@@ -4609,6 +5903,11 @@ window.__ModuleLoader__.load({
                 fieldContent: 'Content (Markdown)',
                 articleHint:
                   'A draft stays out of retrieval; publishing queues parsing and indexing. Saved articles appear in the document table.',
+                editorLoading: 'Loading the Markdown editor…',
+                editorLoadFailed:
+                  'The Markdown editor could not load; plain-text editing is available and saving still works.',
+                editorRetry: 'Retry loading the editor',
+                editorFallbackPlaceholder: 'Write Markdown here…',
                 statusDraft: 'Draft',
                 statusPublish: 'Publish',
                 articleCreated: 'Article created; parsing is queued.',
@@ -4655,6 +5954,33 @@ window.__ModuleLoader__.load({
                 uploadCount: '{count} docs',
                 mentionSection: 'WeKnora knowledge bases',
                 mentionCount: '{count} docs',
+                pickerMenuLabel: 'WeKnora files',
+                pickerMenuDescription: 'Pick knowledge-base files for this message',
+                pickerTitle: 'Add files from WeKnora',
+                pickerKbList: 'Knowledge bases',
+                pickerDocs: 'Files',
+                pickerSearchPlaceholder: 'Search file titles…',
+                pickerLoading: 'Loading knowledge bases…',
+                pickerLoadingDocs: 'Loading files…',
+                pickerKbFailed: 'Could not load knowledge bases.',
+                pickerDocFailed: 'Could not load files: {error}',
+                pickerRetry: 'Retry',
+                pickerNoKbs: 'This deployment has no knowledge base.',
+                pickerNoDocs: 'This knowledge base has no files yet.',
+                pickerNoMatch: 'No matching files.',
+                pickerChooseKb: 'Choose a knowledge base on the left.',
+                pickerKbCount: '{count} docs',
+                pickerSelected: '{count} file(s) selected',
+                pickerAddNone: 'Add',
+                pickerAddCount: 'Add {count} file(s)',
+                pickerCancel: 'Cancel',
+                pickerMore: 'Load more ({count} left)',
+                pickerInsertFailed: 'Could not insert into the composer: it is not editable, or no session is available.',
+                pickerInsertPartial: 'Inserted {inserted}/{total} files; retry the rest.',
+                pickerStatusCompleted: 'searchable',
+                pickerStatusProcessing: 'processing',
+                pickerStatusPending: 'pending',
+                pickerStatusFailed: 'parse failed',
                 workspaceUploaded: 'Uploaded to "{name}"',
                 workspaceTooLarge: 'This file exceeds the harness read limit (20 MiB by default), so it cannot be uploaded from the workspace.',
                 workspaceForbidden: 'You do not have permission to read this file.',
@@ -4713,6 +6039,34 @@ window.__ModuleLoader__.load({
               }
             } catch {
               /* best effort: the upload already succeeded */
+            }
+          },
+          /**
+           * Insert one WeKnora document chip per picked file into the addressed
+           * composer. Called by the + menu picker dialog, which owns the live
+           * `inputActions` face.
+           * @param targetSessionId - Session whose composer receives the chips.
+           * @param documents - Picked documents (`{kbId, id, title}`).
+           * @param actions - Standard `inputActions` prop of the caller slot.
+           * @returns `{inserted, unavailable}`.
+           */
+          insertDocuments: (targetSessionId, documents, actions) =>
+            insertDocumentChips(ctx, targetSessionId, documents, actions),
+          /**
+           * Return the keyboard to the addressed composer after the picker
+           * closes, so the user can keep typing where the chips landed.
+           * @param targetSessionId - Session to focus.
+           */
+          focusComposer: (targetSessionId) => {
+            try {
+              const input = conversation()?.input;
+              const sessions = ctx.get('sessions');
+              const actx = typeof sessions?.scope === 'function' ? sessions.scope(targetSessionId) : undefined;
+              if (input !== undefined && actx !== undefined && typeof input.for === 'function') {
+                input.for(actx)?.focus?.();
+              }
+            } catch {
+              /* focusing is best-effort */
             }
           },
         };
@@ -4785,16 +6139,112 @@ window.__ModuleLoader__.load({
             KnowledgeBaseMentionChip,
           ),
         );
-        ctx.inject(['inputTriggers', 'uiConversation'], (mentionCtx) => {
-          mentionCtx.effect(
-            () => mentionCtx.uiConversation.userText.register(KB_USER_TEXT_RULE),
-            'weknora: @ mention rule',
-          );
-          mentionCtx.effect(
-            () => mentionCtx.inputTriggers.registerSource(mentionSource),
+        // Document chips share the same renderer surface under their own key.
+        ctx.slots.inject('conversation.user.text.node', () =>
+          ctx.slots.register(
+            { name: 'conversation.user.text.node', key: DOC_SOURCE, priority: 100, locale: NS },
+            DocumentMentionChip,
+          ),
+        );
+        /**
+         * Reference source owning document chips.
+         *
+         * The + menu picks files and inserts chips directly, so this source
+         * contributes no `@` candidates; it exists because the composer
+         * serializes each chip through the codec of the source named on it.
+         */
+        const documentSource = {
+          trigger: '@',
+          name: DOC_SOURCE,
+          showGroupTitle: false,
+          // The trigger pipeline awaits every source's candidates; resolving to
+          // an empty roll keeps typed `@` behaviour exactly as before.
+          async candidates() {
+            return [];
+          },
+          onPick() {
+            return undefined;
+          },
+          openReference() {
+            return false;
+          },
+          codec: {
+            clipboardText: (ref) => ref,
+            serialize: (ref) => Promise.resolve(ref),
+          },
+        };
+        // Chip serialization needs these sources on every DSH version: the
+        // composer resolves each chip's model text through the codec of the
+        // source named on it. Registering them does not depend on the
+        // user-text renderer API, which only newer clients expose.
+        ctx.inject(['inputTriggers'], (triggerCtx) => {
+          triggerCtx.effect(
+            () => triggerCtx.inputTriggers.registerSource(mentionSource),
             'weknora: @ mention source',
           );
+          triggerCtx.effect(
+            () => triggerCtx.inputTriggers.registerSource(documentSource),
+            'weknora: document reference source',
+          );
         });
+        // Sent-message chip rendering (and the mention rule that feeds it) is
+        // only available where `uiConversation.userText` exists; deployments
+        // without it keep the plain mention text.
+        ctx.inject(['uiConversation'], (textCtx) => {
+          const userText = textCtx.uiConversation?.userText;
+          if (typeof userText?.register !== 'function') return;
+          textCtx.effect(() => userText.register(KB_USER_TEXT_RULE), 'weknora: @ mention rule');
+          textCtx.effect(() => userText.register(DOC_USER_TEXT_RULE), 'weknora: document mention rule');
+        });
+
+        // The + menu row only records a request; the per-session composer
+        // overlay owns the dialog and the chip insertion.
+        ctx.inject(['commandUi'], (commandCtx) => {
+          let commands;
+          try {
+            commands = commandCtx.get('commandUi');
+          } catch {
+            commands = undefined;
+          }
+          if (commands === undefined || typeof commands.register !== 'function') return;
+          ctx.effect(
+            () =>
+              commands.register({
+                name: 'weknora',
+                label: () => text('pickerMenuLabel'),
+                description: () => text('pickerMenuDescription'),
+                icon: PanelIcon,
+                available: (session) => {
+                  if (typeof session?.sessionId !== 'string' || session.sessionId === '') return false;
+                  // Mirror the built-in File row: no picker where the composer
+                  // refuses file intake (e.g. a read-only child composer).
+                  try {
+                    const input = conversation()?.input;
+                    if (input !== undefined && typeof input.canPickFiles === 'function') {
+                      return input.canPickFiles(session.sessionId) === true;
+                    }
+                  } catch {
+                    /* keep the row when the input face is unavailable */
+                  }
+                  return true;
+                },
+                ui: {
+                  kind: 'action',
+                  run: (session) => openDocumentPicker(session.sessionId),
+                },
+              }),
+            'weknora: + menu document picker',
+          );
+        });
+
+        /** Bind the picker environment once; the overlay only receives slot props. */
+        const BoundPicker = (slotProps) => h(WeKnoraDocumentPicker, { ...slotProps, env });
+        ctx.slots.inject('conversation.input.overlay', () =>
+          ctx.slots.register(
+            { name: 'conversation.input.overlay', id: 'weknora-picker', order: 30, locale: NS },
+            BoundPicker,
+          ),
+        );
 
         /** Bind the environment once; slot components only receive slot props. */
         const BoundPage = (slotProps) => h(WeKnoraPage, { ...slotProps, env });

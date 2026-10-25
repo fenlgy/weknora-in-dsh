@@ -84,6 +84,8 @@ if (captured !== undefined && reactStack !== undefined) {
   const triggerSources = [];
   /** User-text rules registered through `ctx.uiConversation`. */
   const userTextRules = [];
+  /** Command contributions registered through `ctx.commandUi`. */
+  const commands = [];
   const mentionCtx = {
     effect: (factory) => factory(),
     uiConversation: {
@@ -101,10 +103,22 @@ if (captured !== undefined && reactStack !== undefined) {
       },
     },
   };
+  const commandCtx = {
+    effect: (factory) => factory(),
+    get: (key) =>
+      key === 'commandUi'
+        ? {
+            register: (contribution) => {
+              commands.push(contribution);
+              return () => {};
+            },
+          }
+        : undefined,
+  };
   const ctx = {
     effect: (factory) => factory(),
     get: () => undefined,
-    inject: (_deps, callback) => callback(mentionCtx),
+    inject: (deps, callback) => callback(deps.includes('commandUi') ? commandCtx : mentionCtx),
     locale: {
       register: (ns, dict) => {
         dictionaries.set(ns, dict);
@@ -123,7 +137,7 @@ if (captured !== undefined && reactStack !== undefined) {
   plugin.apply(ctx);
 
   test('registers the panel page and its sidebar entry', () => {
-    assert.equal(registrations.length, 5);
+    assert.equal(registrations.length, 7);
     const main = registrations.find((item) => item.options.name === 'main');
     const entry = registrations.find((item) => item.options.name === 'sidebar.panellist');
     assert.ok(main && entry);
@@ -171,6 +185,15 @@ if (captured !== undefined && reactStack !== undefined) {
       'colActions',
       'reparse',
       'delete',
+      'editorLoading',
+      'editorLoadFailed',
+      'editorRetry',
+      'editorFallbackPlaceholder',
+      'pickerMenuLabel',
+      'pickerTitle',
+      'pickerSearchPlaceholder',
+      'pickerAddCount',
+      'pickerInsertFailed',
     ]) {
       assert.equal(typeof dict.zh[key], 'string', `zh.${key} missing`);
       assert.equal(typeof dict.en[key], 'string', `en.${key} missing`);
@@ -279,16 +302,129 @@ if (captured !== undefined && reactStack !== undefined) {
     assert.match(empty, /上传到知识库/);
   });
 
-  test('registers a WeKnora source and rule into the @ pipeline', () => {
-    assert.equal(triggerSources.length, 1);
-    const source = triggerSources[0];
+  test('registers a WeKnora source and rule into the @ pipeline', async () => {
+    assert.equal(triggerSources.length, 2);
+    const source = triggerSources.find((entry) => entry.name === 'weknora-kb');
+    assert.ok(source);
     assert.equal(source.trigger, '@');
-    assert.equal(source.name, 'weknora-kb');
+    const documentSource = triggerSources.find((entry) => entry.name === 'weknora-doc');
+    assert.ok(documentSource, 'document chips need a serializer source');
+    assert.equal(documentSource.trigger, '@');
+    assert.deepEqual(await documentSource.candidates(), []);
+    assert.equal(documentSource.codec.clipboardText('x'), 'x');
+    assert.equal(typeof documentSource.codec.serialize, 'function');
+    assert.equal(userTextRules.length, 2);
     const rule = userTextRules.find((entry) => entry.id === 'weknora-kb');
     assert.ok(rule, 'a user-text rule must render sent mentions');
-    const node = registrations.find((item) => item.options.name === 'conversation.user.text.node');
+    const docRule = userTextRules.find((entry) => entry.id === 'weknora-doc');
+    assert.ok(docRule, 'a user-text rule must render sent documents');
+    const nodes = registrations.filter((item) => item.options.name === 'conversation.user.text.node');
+    assert.equal(nodes.length, 2);
+    assert.ok(nodes.some((node) => node.options.key === 'weknora-kb'));
+    assert.ok(nodes.some((node) => node.options.key === 'weknora-doc'));
+  });
+
+  test('registers the + menu command and the composer picker overlay', () => {
+    const overlay = registrations.find((item) => item.options.name === 'conversation.input.overlay');
+    assert.ok(overlay, 'the picker must mount in the composer overlay');
+    assert.equal(overlay.options.id, 'weknora-picker');
+    assert.equal(overlay.options.order, 30);
+    assert.equal(overlay.options.locale, 'weknora-kb');
+
+    assert.equal(commands.length, 1);
+    const command = commands[0];
+    assert.equal(command.name, 'weknora');
+    assert.equal(command.label(), 'WeKnora 文件');
+    assert.equal(command.description(), '从知识库挑选几个文件加入这条消息');
+    assert.equal(command.ui.kind, 'action');
+    assert.equal(command.available({ sessionId: 'session-1' }), true);
+    assert.equal(command.available({}), false);
+
+    const { pickerHub, openDocumentPicker, closeDocumentPicker } = plugin.__internals;
+    openDocumentPicker('session-9');
+    assert.equal(pickerHub.request.sessionId, 'session-9');
+    closeDocumentPicker(pickerHub.request.seq);
+    assert.equal(pickerHub.request, null);
+  });
+
+  test('formats, parses, and renders canonical document mentions', () => {
+    const { formatDocumentMention, documentChip, DOC_USER_TEXT_RULE, DocumentMentionChip } = plugin.__internals;
+    const mention = formatDocumentMention('kb/1', 'doc 2', '退款 [流程]');
+    assert.equal(mention, '@[退款 流程](weknora:doc/kb%2F1/doc%202)');
+    const text = `请看 ${mention} 的内容`;
+    const node = DOC_USER_TEXT_RULE.match(text, 0);
     assert.ok(node);
-    assert.equal(node.options.key, 'weknora-kb');
+    assert.equal(node.id, 'weknora-doc');
+    assert.equal(node.data.label, '退款 流程');
+    assert.equal(node.data.kbId, 'kb/1');
+    assert.equal(node.data.id, 'doc 2');
+    assert.equal(text.slice(node.start, node.end), mention);
+
+    const chip = documentChip({ kbId: 'kb-1', id: 'doc-1', title: '退款流程.md' });
+    assert.equal(chip.source, 'weknora-doc');
+    assert.equal(chip.ref, '@[退款流程.md](weknora:doc/kb-1/doc-1)');
+    assert.equal(chip.appearance, 'file');
+    assert.equal(chip.clipboardText, chip.ref);
+
+    const html = renderToStaticMarkup(
+      React.createElement(DocumentMentionChip, {
+        node: { data: { label: '退款流程.md' } },
+        raw: chip.ref,
+      }),
+    );
+    assert.match(html, /退款流程\.md/);
+    assert.match(html, /wkn-kb-mention/);
+  });
+
+  test('renders the picker only for the addressed session', () => {
+    const { WeKnoraDocumentPicker, openDocumentPicker, closeDocumentPicker, pickerHub } = plugin.__internals;
+    const dict = dictionaries.get('weknora-kb');
+    const env = { text: (key, params) => (params === undefined ? dict.zh[key] ?? key : (dict.zh[key] ?? key).replace(/\{(\w+)\}/g, (m, name) => String(params[name] ?? m))) };
+    const Picker = (props) => React.createElement(WeKnoraDocumentPicker, { env, ...props });
+    assert.equal(renderToStaticMarkup(React.createElement(Picker, { sessionId: 'session-1' })), '');
+
+    openDocumentPicker('session-1');
+    try {
+      assert.equal(renderToStaticMarkup(React.createElement(Picker, { sessionId: 'session-2' })), '');
+      const html = renderToStaticMarkup(React.createElement(Picker, { sessionId: 'session-1' }));
+      assert.match(html, /role="dialog"/);
+      assert.match(html, /从 WeKnora 添加文件/);
+      assert.match(html, /正在读取知识库/);
+      assert.match(html, /从左侧选择一个知识库/);
+      assert.match(html, /aria-label="取消"/);
+    } finally {
+      closeDocumentPicker(pickerHub.request?.seq);
+    }
+  });
+
+  test('inserts one chip per picked document through the composer shell', () => {
+    const { insertDocumentChips } = plugin.__internals;
+    const inserted = [];
+    const shell = {
+      caretSpan: () => ({ start: 0, end: 0 }),
+      rev: 4,
+      insertReference: (ref, span) => {
+        inserted.push({ ref, span });
+        return true;
+      },
+    };
+    const ctx = {
+      get: (key) => (key === 'conversation' ? { input: { shell: () => shell } } : undefined),
+    };
+    const documents = [
+      { kbId: 'kb-1', id: 'doc-1', title: '退款流程.md' },
+      { kbId: 'kb-2', id: 'doc-4', title: '售后政策.md' },
+    ];
+    const result = insertDocumentChips(ctx, 'session-1', documents, undefined);
+    assert.deepEqual(result, { inserted: 2, unavailable: false });
+    assert.equal(inserted.length, 2);
+    assert.equal(inserted[0].ref.source, 'weknora-doc');
+    assert.equal(inserted[0].ref.ref, '@[退款流程.md](weknora:doc/kb-1/doc-1)');
+    assert.equal(inserted[1].ref.ref, '@[售后政策.md](weknora:doc/kb-2/doc-4)');
+    assert.deepEqual(inserted[1].span, { start: 0, end: 0, draftRev: 4 });
+
+    const unavailable = insertDocumentChips({ get: () => undefined }, 'session-1', documents, undefined);
+    assert.deepEqual(unavailable, { inserted: 0, unavailable: true });
   });
 
   test('formats and parses canonical knowledge-base mentions', () => {
@@ -407,5 +543,105 @@ if (captured !== undefined && reactStack !== undefined) {
     const list = readKnowledgeList({ data: [{ id: 'k2', file_name: 'b.pdf' }], total: 1 });
     assert.equal(list.total, 1);
     assert.equal(list.documents[0].id, 'k2');
+  });
+
+  test('builds same-origin asset URLs for the vendored editor', () => {
+    const { editorAssetUrls } = plugin.__internals;
+    const urls = editorAssetUrls();
+    for (const [key, suffix] of Object.entries({
+      script: '/weknora/__vendor/toastui-3.2.2/toastui-editor.min.js',
+      style: '/weknora/__vendor/toastui-3.2.2/toastui-editor.min.css',
+      darkStyle: '/weknora/__vendor/toastui-3.2.2/toastui-editor-dark.min.css',
+      i18n: '/weknora/__vendor/toastui-3.2.2/zh-cn.js',
+    })) {
+      assert.equal(typeof urls[key], 'string', key);
+      assert.ok(urls[key].includes(suffix), `${key}: ${urls[key]}`);
+      assert.ok(urls[key].includes('?rev='), `${key} is not cache-busted: ${urls[key]}`);
+    }
+  });
+
+  test('detects Markdown in pasted plain text', () => {
+    const { looksLikeMarkdown } = plugin.__internals;
+    for (const markdown of [
+      '# 标题',
+      '## 二级标题\n\n正文',
+      '- 列表项',
+      '1. 第一步',
+      '> 引用',
+      '**粗体**和普通文字',
+      '看这个 [链接](https://example.com)',
+      '```js\nconst a = 1;\n```',
+      '| 列A | 列B |\n| --- | --- |',
+    ]) {
+      assert.equal(looksLikeMarkdown(markdown), true, markdown);
+    }
+    for (const prose of ['普通的一段话。', '包含 ** 但不是成对标记', 'a | b']) {
+      assert.equal(looksLikeMarkdown(prose), false, prose);
+    }
+  });
+
+  test('matches completed inline Markdown tokens for WYSIWYG shortcuts', () => {
+    const { matchTypedInlineMarkdown } = plugin.__internals;
+    assert.deepEqual(matchTypedInlineMarkdown('**粗体**'), {
+      start: 0,
+      end: 6,
+      command: 'bold',
+      delim: 2,
+    });
+    assert.deepEqual(matchTypedInlineMarkdown('这是**粗体**'), {
+      start: 2,
+      end: 8,
+      command: 'bold',
+      delim: 2,
+    });
+    assert.deepEqual(matchTypedInlineMarkdown('也有*斜体*'), {
+      start: 2,
+      end: 6,
+      command: 'italic',
+      delim: 1,
+    });
+    assert.deepEqual(matchTypedInlineMarkdown('~~删除~~'), {
+      start: 0,
+      end: 6,
+      command: 'strike',
+      delim: 2,
+    });
+    assert.deepEqual(matchTypedInlineMarkdown('`代码`'), {
+      start: 0,
+      end: 4,
+      command: 'code',
+      delim: 1,
+    });
+    assert.equal(matchTypedInlineMarkdown('普通文字'), null);
+    assert.equal(matchTypedInlineMarkdown('**未闭合'), null);
+  });
+
+  test('renders the article editor shell while the vendor editor loads', () => {
+    const dict = dictionaries.get('weknora-kb');
+    const t = (key, params) => {
+      const raw = dict.zh[key] ?? key;
+      if (params === undefined) return raw;
+      return raw.replace(/\{(\w+)\}/g, (match, name) =>
+        Object.prototype.hasOwnProperty.call(params, name) ? String(params[name]) : match,
+      );
+    };
+    const html = renderToStaticMarkup(
+      React.createElement(plugin.__internals.ArticleEditor, {
+        t,
+        busy: false,
+        initial: { mode: 'create', title: '', content: '', status: 'draft' },
+        onClose: () => {},
+        onSubmit: () => {},
+      }),
+    );
+    assert.match(html, /新建文章/);
+    assert.match(html, /正文（Markdown）/);
+    assert.match(html, /wkn-md-shell/);
+    assert.match(html, /wkn-md-loading/);
+    assert.match(html, /正在加载 Markdown 编辑器/);
+    assert.match(html, /保存/);
+    assert.doesNotMatch(html, /wkn-editor-hint/);
+    // The vendored script only runs in a real browser, never during SSR.
+    assert.doesNotMatch(html, /toastui-editor-defaultUI/);
   });
 }

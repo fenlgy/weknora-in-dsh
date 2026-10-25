@@ -252,6 +252,42 @@ test('rejects invalid settings instead of storing them', async () => {
   }
 });
 
+test('serves the vendored Markdown editor assets locally', async () => {
+  seen.length = 0;
+  const script = await callRoute(routeRef, '/weknora/__vendor/toastui-3.2.2/toastui-editor.min.js');
+  assert.equal(script.status, 200);
+  assert.match(script.headers.get('content-type'), /text\/javascript/);
+  assert.match(script.headers.get('cache-control'), /immutable/);
+  const source = await script.text();
+  assert.match(source, /@toast-ui\/editor v3\.2\.2/);
+  assert.match(source, /__WKN_TOASTUI__/);
+
+  const style = await callRoute(routeRef, '/weknora/__vendor/toastui-3.2.2/toastui-editor.min.css');
+  assert.equal(style.status, 200);
+  assert.match(style.headers.get('content-type'), /text\/css/);
+
+  const i18n = await callRoute(routeRef, '/weknora/__vendor/toastui-3.2.2/zh-cn.js');
+  assert.equal(i18n.status, 200);
+  assert.match(i18n.headers.get('content-type'), /text\/javascript/);
+  assert.match(await i18n.text(), /setLanguage\('zh-CN'/);
+
+  const head = await callRoute(routeRef, '/weknora/__vendor/toastui-3.2.2/toastui-editor.min.js', {
+    method: 'HEAD',
+  });
+  assert.equal(head.status, 200);
+  assert.equal(await head.text(), '');
+  assert.equal(seen.length, 0, 'vendor assets must never be proxied upstream');
+});
+
+test('rejects unknown vendor paths and write methods', async () => {
+  const missing = await callRoute(routeRef, '/weknora/__vendor/toastui-3.2.2/nope.js');
+  assert.equal(missing.status, 404);
+  const post = await callRoute(routeRef, '/weknora/__vendor/toastui-3.2.2/toastui-editor.min.js', {
+    method: 'POST',
+  });
+  assert.equal(post.status, 405);
+});
+
 test('proxies REST calls with the stored credential', async () => {
   seen.length = 0;
   const response = await callRoute(routeRef, '/weknora/api/v1/knowledge-bases');
@@ -378,6 +414,55 @@ test('reads mentions from the latest direct user message only', () => {
   assert.deepEqual(__internals.referencedKnowledgeBaseIds(undefined), []);
 });
 
+test('extracts document mentions from user text', () => {
+  const text = [
+    'compare @[退款流程](weknora:doc/kb-1/doc-1)',
+    'with @[售后 FAQ](weknora:doc/kb-2%2Fmain/doc-2%2Fv2)',
+    'and again @[退款流程](weknora:doc/kb-1/doc-1)',
+    'but not @[产品文档](weknora:kb/kb-3)',
+  ].join(' ');
+  assert.deepEqual(__internals.documentMentionsFromText(text), [
+    { knowledgeBaseId: 'kb-1', knowledgeId: 'doc-1' },
+    { knowledgeBaseId: 'kb-2/main', knowledgeId: 'doc-2/v2' },
+  ]);
+  assert.deepEqual(
+    __internals.documentMentionsFromText('@[产品文档](weknora:kb/kb-3)'),
+    [],
+    'knowledge-base mentions never match as documents',
+  );
+  assert.deepEqual(__internals.documentMentionsFromText('no mentions here'), []);
+  assert.deepEqual(__internals.documentMentionsFromText(undefined), []);
+});
+
+test('decodes document mention ids and keeps malformed escapes literal', () => {
+  assert.deepEqual(
+    __internals.documentMentionsFromText('@[加号](weknora:doc/a%2Bb/c%2Bd)'),
+    [{ knowledgeBaseId: 'a+b', knowledgeId: 'c+d' }],
+  );
+  assert.deepEqual(
+    __internals.documentMentionsFromText('@[退款流程](weknora:doc/%E4%BA%A7%E5%93%81/doc-%E9%80%80%E6%AC%BE)'),
+    [{ knowledgeBaseId: '产品', knowledgeId: 'doc-退款' }],
+  );
+  assert.deepEqual(
+    __internals.documentMentionsFromText('@[坏转义](weknora:doc/kb-1/doc-%E0%A4%A)'),
+    [{ knowledgeBaseId: 'kb-1', knowledgeId: 'doc-%E0%A4%A' }],
+    'a malformed escape keeps the literal segment',
+  );
+});
+
+test('reads document mentions from the latest direct user message only', () => {
+  const events = new Map([
+    [1, { type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: '@[old](weknora:doc/kb-old/doc-old)' }] } }],
+    [2, { type: 'user/message', data: { source: { kind: 'tool' }, content: [{ type: 'text', text: '@[ignored](weknora:doc/kb-tool/doc-tool)' }] } }],
+    [3, { type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'compare @[new](weknora:doc/kb-new/doc-new)' }] } }],
+  ]);
+  const agent = { session: { surface: { nodes: [1, 2, 3] }, eventAt: (seq) => events.get(seq) } };
+  assert.deepEqual(__internals.referencedDocumentMentions(agent), [
+    { knowledgeBaseId: 'kb-new', knowledgeId: 'doc-new' },
+  ]);
+  assert.deepEqual(__internals.referencedDocumentMentions(undefined), []);
+});
+
 test('the search tool applies a knowledge-base mention as its scope', async () => {
   seen.length = 0;
   const events = new Map([
@@ -391,6 +476,77 @@ test('the search tool applies a knowledge-base mention as its scope', async () =
   assert.ok(forwarded, 'search request was forwarded');
   const body = JSON.parse(forwarded.body.toString('utf8'));
   assert.deepEqual(body.knowledge_base_ids, ['kb-mentioned']);
+});
+
+test('the search tool scopes a document mention to its documents', async () => {
+  seen.length = 0;
+  const events = new Map([
+    [1, {
+      type: 'user/message',
+      data: {
+        source: { kind: 'user' },
+        content: [{
+          type: 'text',
+          text: '@[产品文档](weknora:kb/kb-mentioned) 以及 @[退款流程](weknora:doc/kb-doc/doc-1) 和 @[售后政策](weknora:doc/kb-doc%2F2/doc-2%2Fv2)',
+        }],
+      },
+    }],
+  ]);
+  const agent = { session: { surface: { nodes: [1] }, eventAt: (seq) => events.get(seq) } };
+  const tools = mount(undefined).tools;
+  const tool = tools.find((entry) => entry.name === 'weknora_search');
+  const value = await tool.execute({ query: '退款' }, { agent });
+  const forwarded = seen.find((request) => request.url === '/api/v1/knowledge-search');
+  assert.ok(forwarded, 'search request was forwarded');
+  const body = JSON.parse(forwarded.body.toString('utf8'));
+  assert.deepEqual(body.knowledge_base_ids, ['kb-mentioned', 'kb-doc', 'kb-doc/2'], 'the mention union scopes the search');
+  assert.deepEqual(body.knowledge_ids, ['doc-1', 'doc-2/v2']);
+  assert.deepEqual(value.knowledge_base_ids, body.knowledge_base_ids);
+});
+
+test('the search tool omits knowledge_ids when no document is mentioned', async () => {
+  seen.length = 0;
+  const tools = mount(undefined).tools;
+  const tool = tools.find((entry) => entry.name === 'weknora_search');
+  await tool.execute({ query: '退款' }, {});
+  const forwarded = seen.find((request) => request.url === '/api/v1/knowledge-search');
+  assert.ok(forwarded, 'search request was forwarded');
+  const body = JSON.parse(forwarded.body.toString('utf8'));
+  assert.equal('knowledge_ids' in body, false, 'no empty knowledge_ids array is sent');
+  assert.deepEqual(body.knowledge_base_ids, ['kb-1'], 'without mentions the search falls back to every visible knowledge base');
+});
+
+test('the ask tool forwards document mentions as knowledge_ids', async () => {
+  seen.length = 0;
+  const events = new Map([
+    [1, {
+      type: 'user/message',
+      data: {
+        source: { kind: 'user' },
+        content: [{ type: 'text', text: '@[退款流程](weknora:doc/kb-doc/doc-1) 和 @[退款流程](weknora:doc/kb-doc/doc-1)' }],
+      },
+    }],
+  ]);
+  const agent = { session: { surface: { nodes: [1] }, eventAt: (seq) => events.get(seq) } };
+  const tools = mount(undefined).tools;
+  const tool = tools.find((entry) => entry.name === 'weknora_ask');
+  await tool.execute({ query: '退款多久' }, { agent });
+  const forwarded = seen.find((request) => request.url === '/api/v1/agent-chat/session-1');
+  assert.ok(forwarded, 'agent chat request was forwarded');
+  const body = JSON.parse(forwarded.body.toString('utf8'));
+  assert.deepEqual(body.knowledge_ids, ['doc-1']);
+  assert.deepEqual(body.knowledge_base_ids, ['kb-doc']);
+});
+
+test('the ask tool omits knowledge_ids when no document is mentioned', async () => {
+  seen.length = 0;
+  const tools = mount(undefined).tools;
+  const tool = tools.find((entry) => entry.name === 'weknora_ask');
+  await tool.execute({ query: '退款多久' }, {});
+  const forwarded = seen.find((request) => request.url === '/api/v1/agent-chat/session-1');
+  assert.ok(forwarded, 'agent chat request was forwarded');
+  const body = JSON.parse(forwarded.body.toString('utf8'));
+  assert.equal('knowledge_ids' in body, false);
 });
 
 test('normalizes base URLs and clips oversized passages', () => {

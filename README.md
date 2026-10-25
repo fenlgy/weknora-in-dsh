@@ -34,12 +34,27 @@
 | 区域 | 能力 |
 | --- | --- |
 | 知识库 | 列表 / 置顶分组 / 名称与文档搜索、新建知识库（文档 / FAQ / Wiki）、删除知识库、卡片统计 |
-| 文章管理 | 上传文件/文件夹（多选、multipart 直传；也可**把文件或整个文件夹拖进知识库**，文件夹保留相对路径）、从 URL 导入、手工撰写 Markdown、编辑手工文章、删除、重新解析、分页 |
+| 文章管理 | 上传文件/文件夹（多选、multipart 直传；也可**把文件或整个文件夹拖进知识库**，文件夹保留相对路径）、从 URL 导入、手工撰写 Markdown（**内置 Toast UI Editor：格式工具栏、所见即所得 / Markdown 源码双模式、可视化表格编辑、中文界面**）、编辑手工文章、删除、重新解析、分页 |
 | 文档详情 | 解析分块按 Markdown 渲染、**编辑分块**（乐观并发 `expected_revision`）、原文件预览（PDF / 图片 / 文本编码嗅探）、复制 / 发送到对话 |
 | 检索 | 多知识库范围选择、`POST /knowledge-search` 命中片段与分数、rerank 诊断 |
 | 智能体 | 列出 WeKnora 中配置的智能体、选择范围、流式（SSE）提问、工具调用计数、引用来源、复制 / 发送到对话、多轮会话与「新对话」 |
 | 会话引用 | 在任意新会话的输入框输入 `@`，菜单里多出「WeKnora 知识库」分组；选中后插入知识库 chip，当前这轮的工具调用自动只检索该库 |
+| 会话文件 | 输入框「+」（添加文件或调用指令）菜单新增「WeKnora 文件」：打开多选对话框，跨知识库勾选任意几篇文档，插入文件 chip；当前这轮的工具调用自动只检索这几篇文档 |
 | 设置 | 服务地址 / API Key / 租户 ID / 访问令牌 / 默认智能体、「测试连接」，保存在本机且**不会随对话发给模型** |
+
+> 新建/编辑文章由 **Toast UI Editor** 驱动（NHN 开源、MIT，专用 Markdown 编辑器里 GitHub 星标最高，
+> npm 周下载约 13.5 万）：工具栏一键插入标题、粗体、列表、链接、代码和表格；默认「所见即所得」，
+> **粘贴 Markdown 会自动转成排版，手输 `# `、`- `、`1. `、`> ` 以及 `**粗体**`、`*斜体*`、`~~删除~~`、`` `代码` `` 也会自动成型**；
+> 表格可以直接点选行列、增删行列，右下角可切换成 Markdown 源码；中文界面，支持快捷键。
+> 编辑弹窗接近全屏，编辑区高度随窗口自适应。草稿不进入检索，发布后才排队解析。
+>
+> 编辑器脚本与样式已离线内置在 `vendor/toastui/`，由宿主侧同源提供，不依赖 CDN；不构建插件也能直接安装使用。
+
+![Toast UI Editor：所见即所得与可视化表格](test/e2e/screenshots/04b-markdown-editor.png)
+
+![切换 Markdown 源码模式：左侧源码、右侧实时预览](test/e2e/screenshots/04c-markdown-split.png)
+
+![粘贴或手输 Markdown 自动转换成排版](test/e2e/screenshots/04e-paste-typing.png)
 
 ### DSH Agent 工具
 
@@ -53,7 +68,8 @@
 | `weknora_ask` | 交给 **WeKnora 中配置的智能体**回答，返回答案、引用与可续聊的 `session_id` |
 
 工具名可用 `toolPrefix` 改名（同时挂两套部署时有用）。会话里的 `@` 知识库 mention 会自动成为本轮
-`weknora_search` / `weknora_ask` 的检索范围（宿主侧解析，无需模型自己传 id）。
+`weknora_search` / `weknora_ask` 的检索范围（宿主侧解析，无需模型自己传 id）；从「+」菜单加入的
+文件 chip 会进一步把范围收窄到所选文档。
 
 ### 工作区文件快捷上传
 
@@ -81,6 +97,24 @@
 ![@ 引用知识库](test/e2e/screenshots/09-mention.png)
 
 > 菜单只显示候选，不影响模型请求；真正的范围限制发生在宿主工具执行时，绝对路径和 Key 都不会进入提示词。
+
+### 从「+」菜单添加 WeKnora 文件
+
+输入框左侧的「**+**」（添加文件或调用指令）菜单里多出一行 **WeKnora 文件**：
+
+![「+」菜单里的 WeKnora 文件入口](test/e2e/screenshots/09b-picker-menu.png)
+
+1. 点击后打开**多选对话框**：左侧切换知识库，右侧勾选文件（可搜索标题、解析状态、大小）；
+2. 勾选会跨知识库保留，右下角显示「已选 N 个文件」，确认后一次性插入 N 个文件 chip；
+3. chip 在草稿里保存为规范 mention `@[文件名](weknora:doc/<kb>/<doc>)`，发送时由宿主解析；
+   新版 DSH（0.2.1+）刷新或切换会话后仍能恢复成 chip，0.2.0 会把草稿还原成同样的 mention 文本
+   （不影响发送与检索范围）；
+4. 发送后宿主工具把本轮检索范围**限定到这几篇文档**：`weknora_search` / `weknora_ask` 会带上
+   `knowledge_ids`，与 `@` 知识库 mention 可以同时使用（知识库范围取并集，文档范围进一步收窄）。
+
+![+ 菜单多选 WeKnora 文件](test/e2e/screenshots/11-picker-selected.png)
+
+> 解析中的文档也可以先加入，WeKnora 完成解析后即可检索到；插入不改变模型请求，直到你发送这条消息。
 
 ---
 
@@ -184,19 +218,26 @@ profile 级兜底写法：
   - 在 DSH web server 上认领前缀路由 `/weknora`，把 `/weknora/<path>` 转发到
     `服务地址 + /<path>`，在**服务端**补上 `X-API-Key` / `Authorization` / `X-Tenant-ID`；
   - 识别 `text/event-stream` 并**逐块透传**，所以智能体回答是流式的；
-  - 本地路由：`GET/PUT /weknora/__config`（设置）、`POST /weknora/__test`（测试连接）；
+  - 本地路由：`GET/PUT /weknora/__config`（设置）、`POST /weknora/__test`（测试连接）、
+    `GET /weknora/__vendor/toastui-3.2.2/...`（离线内置的编辑器脚本、样式与中文语言包）；
   - 通过 `ctx.tools.register()` 注册四个 Agent 工具，工具执行时读取同一份设置。
 - **`client.js`（浏览器侧，纯 JS）**
   - 向侧边栏 `sidebar.panellist` 注册「知识库」入口，并向 `main` 注册同 id 的面板；
-  - 所有网络调用都走同源 `/weknora` 前缀，页面里没有 API Key。
+  - 向 `ctx.commandUi` 注册「+」菜单里的 **WeKnora 文件** 动作，向 `conversation.input.overlay`
+    注册多选对话框；选中的文件以引用 chip 插入 composer，宿主按
+    `@[name](weknora:doc/<kb>/<doc>)` 解析本轮范围；
+  - 所有网络调用都走同源 `/weknora` 前缀，页面里没有 API Key；
+  - 打开新建/编辑文章弹窗时按需加载内置的 Toast UI Editor（脚本、样式、中文语言包均来自宿主侧的同源路由，
+    加载失败会退回纯文本编辑框，保存能力不受影响）。
 
 安全边界：
 
 - API Key 只存在于宿主进程和 `0600` 配置文件；`GET /__config` 只返回 `hasApiKey` / `hasToken` 标志；
 - 允许的逐请求覆盖头：`x-weknora-base` / `x-weknora-key` / `x-weknora-token` / `x-weknora-tenant`；
 - 租户 ID 在面板保存前、宿主转发前都会校验，避免 WeKnora 返回难懂的 `Invalid X-Tenant-ID header`；
-- Markdown 渲染器不使用 `dangerouslySetInnerHTML`，上游文本一律作为 React 文本节点转义，链接只放行
-  `http` / `https` / `mailto`，图片只显示 alt 文本。
+- 分块等只读 Markdown 由自带渲染器输出 React 节点（不使用 `dangerouslySetInnerHTML`），链接只放行
+  `http` / `https` / `mailto`，图片只显示 alt 文本；文章编辑器使用 Toast UI Editor 自带的
+  DOMPurify 清洗管线。
 
 ---
 
@@ -217,11 +258,22 @@ SSH_CONNECTION="127.0.0.1 50000 127.0.0.1 22" DSH_HOME=$PWD/.dsh-test \
   node ~/.dsh/profiles/node_modules/@deepseek-ai/dsh/lib/bin.js \
   --profile weknora-test --port 19403 --no-open
 python3 test/e2e/workspace_upload.py "http://127.0.0.1:19403/?token=<printed-token>"
+
+# 「+」菜单选择 WeKnora 文件（多选、跨知识库）
+python3 test/e2e/weknora_files.py "http://127.0.0.1:19402/?token=<printed-token>"
 ```
 
 `test/e2e/panel.py` 会验证：侧边栏入口、设置「测试连接」、知识库列表与新建/删除、文章表格、
-新建文章、重新解析、删除、multipart 上传、**拖拽上传（含拖拽悬浮层）**、**文件夹选择上传（保留子目录）**、
+新建文章（等待 Toast UI Editor 加载、所见即所得输入、可视化插入表格、切换 Markdown 源码、保存/编辑回填）、
+重新解析、删除、multipart 上传、**拖拽上传（含拖拽悬浮层）**、**文件夹选择上传（保留子目录）**、
 WeKnora 智能体流式问答与引用、检索命中，并截图到 `test/e2e/screenshots/`。
+
+编辑器资源是预构建后提交到 `vendor/toastui/` 的，普通安装不需要构建。维护时改动版本或重新打包：
+
+```sh
+npm install          # 安装 devDependencies（esbuild + @toast-ui/editor）
+npm run build:vendor # 重新生成 vendor/toastui/ 下的脚本、样式和语言包
+```
 
 `test/e2e/workspace_upload.py` 会创建/打开工作区文件预览，断言快捷按钮、知识库下拉菜单，并把
 `README.md` 真正上传到 mock 知识库后回面板核对文档行。
@@ -229,20 +281,31 @@ WeKnora 智能体流式问答与引用、检索命中，并截图到 `test/e2e/s
 `test/e2e/mention.py` 在新建会话的输入框里输入 `@产品`，断言菜单过滤出 mock 知识库、选中后出现
 知识库 chip，且草稿序列化为宿主可解析的 `@[产品文档](weknora:kb/<id>)`。
 
+`test/e2e/weknora_files.py` 驱动「+」菜单新增的 **WeKnora 文件**：打开多选对话框、跨文件勾选
+两篇 mock 文档，断言 composer 里出现两个 `weknora-doc` chip、草稿持久化出
+`@[文件名](weknora:doc/<kb>/<doc>)`。截图落在 `test/e2e/screenshots/10..12-picker-*.png`。
+
+宿主半边的测试覆盖：设置落盘与权限、非法设置拒绝、凭据注入、multipart 原样转发、SSE 透传、
+文档 mention 解析（编码 / 去重 / 与知识库 mention 共存 / 只读最新用户消息），以及四个工具对真实
+HTTP mock 的执行与渲染——包括 `weknora_search` / `weknora_ask` 在带文件 chip 时把
+`knowledge_ids` 放进请求体。
+
 `test/e2e/desktop.py` 则用来检查**正在运行的桌面应用**：它复用桌面窗口自己的登录 Cookie，
 在无头浏览器里加载 `127.0.0.1:19387`，确认侧边栏入口、真实知识库与真实智能体列表都渲染出来
 （只读，不会改动 WeKnora 数据）。Cookie 可用 `sqlite3` 从
 `~/Library/Application Support/@deepseek-ai/dsh-desktop/Cookies` 读出后作为参数传入。
-
-宿主半边的测试覆盖：设置落盘与权限、非法设置拒绝、凭据注入、multipart 原样转发、SSE 透传，
-以及四个工具对真实 HTTP mock 的执行与渲染。
 
 ---
 
 ## 6. 兼容性
 
 - 面向 DSH `0.2.0-rc.2` 开发与验证（`sidebar.panellist` / `main` 插槽、`ctx.tools.register()`）。
+  「+」菜单文件选择器还额外在桌面端 `0.2.1-rc.3` 上验证过（`ctx.commandUi` 动作 +
+  `conversation.input.overlay` 浮层 + `SessionInput.insertReference` 插入 chip）。
+- 引用 chip 的**发送时渲染**依赖 `uiConversation.userText`（0.2.1+）；0.2.0 没有这个 API，
+  插件会跳过注册、只保留 `@` 候选与 chip 序列化，发送后的 mention 显示为普通文本。
 - 面向 WeKnora `0.7.x` 的 REST 形状开发；接口在小版本间有增删，面板对可选字段都做了回退读取。
+- 内置 Toast UI Editor `3.2.2`（MIT，脚本 566 KB / 样式 168 KB，仓库内已提交），无需联网或额外构建。
 - 插件自身没有运行时 npm 依赖，只使用 Node 内置模块与浏览器原生 API。
 
 ## License

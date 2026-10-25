@@ -19,6 +19,7 @@
  *   GET  /weknora/__config   read the effective connection settings
  *   PUT  /weknora/__config   merge and persist settings
  *   POST /weknora/__test     probe the deployment through `/knowledge-bases`
+ *   GET  /weknora/__vendor/… serve the vendored Markdown editor assets
  */
 
 import fs from 'node:fs';
@@ -31,6 +32,19 @@ const ROUTE_PATH = '/weknora';
 const CONFIG_PATH = '/__config';
 /** Local helper route that probes the deployment. */
 const TEST_PATH = '/__test';
+/** Versioned prefix for the vendored Toast UI Editor assets. */
+const VENDOR_PREFIX = '/__vendor/toastui-3.2.2';
+/**
+ * Allowlisted vendor files: suffix after {@link VENDOR_PREFIX} → filename and content type.
+ * Keep in sync with `client.js` and `scripts/build-vendor.mjs`.
+ */
+const VENDOR_FILES = new Map([
+  ['/toastui-editor.min.js', ['toastui-editor.min.js', 'text/javascript; charset=utf-8']],
+  ['/toastui-editor.min.css', ['toastui-editor.min.css', 'text/css; charset=utf-8']],
+  ['/toastui-editor-dark.min.css', ['toastui-editor-dark.min.css', 'text/css; charset=utf-8']],
+  ['/zh-cn.js', ['zh-cn.js', 'text/javascript; charset=utf-8']],
+]);
+
 /** Default request budget for ordinary REST calls. */
 const DEFAULT_TIMEOUT_MS = 60_000;
 /** Default request budget for agent/RAG chat calls (a server-side model runs). */
@@ -560,6 +574,21 @@ async function chatOnce(config, requestPath, body, options = {}) {
 //#region panel-facing routes
 
 /**
+ * Read one allowlisted vendor asset from disk.
+ *
+ * The files are small enough to read per request (a handful of hits per page
+ * load, browser-cached afterwards). Reading fresh means a rebuilt
+ * `vendor/toastui/` bundle takes effect without restarting the host.
+ * @param suffix - Path after {@link VENDOR_PREFIX}.
+ * @returns File buffer, or undefined when the suffix is not allowlisted.
+ */
+function readVendorAsset(suffix) {
+  const entry = VENDOR_FILES.get(suffix);
+  if (entry === undefined) return undefined;
+  return fs.readFileSync(new URL(`./vendor/toastui/${entry[0]}`, import.meta.url));
+}
+
+/**
  * Serve the settings helper routes.
  * @param req - Incoming request.
  * @param res - Response to own.
@@ -568,6 +597,34 @@ async function chatOnce(config, requestPath, body, options = {}) {
  * @returns True when the request was handled locally.
  */
 async function handleLocal(req, res, sub, config) {
+  if (sub === VENDOR_PREFIX || sub.startsWith(`${VENDOR_PREFIX}/`)) {
+    const suffix = sub.slice(VENDOR_PREFIX.length);
+    const entry = VENDOR_FILES.get(suffix);
+    if (entry === undefined) {
+      sendJson(res, 404, { error: '没有这个内置资源' });
+      return true;
+    }
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      sendJson(res, 405, { error: '只支持 GET / HEAD' });
+      return true;
+    }
+    let body;
+    try {
+      body = readVendorAsset(suffix);
+    } catch (error) {
+      sendJson(res, 500, { error: `读取内置资源失败：${error instanceof Error ? error.message : String(error)}` });
+      return true;
+    }
+    res.writeHead(200, {
+      'cache-control': 'public, max-age=31536000, immutable',
+      'content-type': entry[1],
+      'content-length': String(body.byteLength),
+      'x-content-type-options': 'nosniff',
+    });
+    if (req.method === 'HEAD') res.end();
+    else res.end(body);
+    return true;
+  }
   if (sub === CONFIG_PATH) {
     if (req.method === 'GET') {
       sendJson(res, 200, { config: publicConfig(effectiveConfig(config)) });
@@ -826,7 +883,12 @@ export function apply(ctx, config) {
           handler: async (req, res) => {
             const requestUrl = new URL(req.url ?? '/', 'http://127.0.0.1');
             const sub = requestUrl.pathname.slice(ROUTE_PATH.length) || '/';
-            if (sub === CONFIG_PATH || sub === TEST_PATH) {
+            if (
+              sub === CONFIG_PATH
+              || sub === TEST_PATH
+              || sub === VENDOR_PREFIX
+              || sub.startsWith(`${VENDOR_PREFIX}/`)
+            ) {
               await handleLocal(req, res, sub, config);
               return;
             }
@@ -866,6 +928,21 @@ export function clip(value, limit) {
 
 /** Canonical client-side mention for a WeKnora knowledge base. */
 const KB_MENTION_PATTERN = /@\[[^\]\n]*\]\(weknora:kb\/([^)\s]+)\)/gu;
+/** Canonical client-side mention for one WeKnora document: `weknora:doc/<kbId>/<docId>`. */
+const DOC_MENTION_PATTERN = /@\[[^\]\n]*\]\(weknora:doc\/([^/)\s]+)\/([^)\s]+)\)/gu;
+
+/**
+ * Decode one encoded mention segment, keeping a malformed escape literal.
+ * @param segment - Encoded id.
+ * @returns The decoded id.
+ */
+function decodeMentionSegment(segment) {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
 
 /**
  * Extract the knowledge-base ids mentioned in one user message.
@@ -878,47 +955,87 @@ export function knowledgeBaseIdsFromText(text) {
   if (typeof text !== 'string' || text === '') return [];
   const ids = [];
   for (const match of text.matchAll(KB_MENTION_PATTERN)) {
-    let id = match[1];
-    try {
-      id = decodeURIComponent(id);
-    } catch {
-      /* keep the literal segment */
-    }
+    const id = decodeMentionSegment(match[1]);
     if (id !== '' && !ids.includes(id)) ids.push(id);
   }
   return ids;
 }
 
 /**
- * Read the knowledge-base mentions of the latest direct user message.
+ * Extract the document mentions of one user message.
+ *
+ * The client inserts `@[name](weknora:doc/<encoded kbId>/<encoded docId>)`;
+ * decoding tolerates a malformed escape by keeping the literal segment.
+ * Knowledge-base mentions (`weknora:kb/...`) never match here.
+ * @param text - Message text.
+ * @returns Unique `{knowledgeBaseId, knowledgeId}` pairs in first-mention order.
+ */
+export function documentMentionsFromText(text) {
+  if (typeof text !== 'string' || text === '') return [];
+  const mentions = [];
+  for (const match of text.matchAll(DOC_MENTION_PATTERN)) {
+    const knowledgeBaseId = decodeMentionSegment(match[1]);
+    const knowledgeId = decodeMentionSegment(match[2]);
+    if (knowledgeBaseId === '' || knowledgeId === '') continue;
+    if (
+      mentions.some(
+        (mention) => mention.knowledgeBaseId === knowledgeBaseId && mention.knowledgeId === knowledgeId,
+      )
+    ) {
+      continue;
+    }
+    mentions.push({ knowledgeBaseId, knowledgeId });
+  }
+  return mentions;
+}
+
+/**
+ * Read the text of the latest direct user message.
  *
  * DSH records a `user/message` event whose `data.source.kind` is `user` for text
  * the operator typed; injected context uses other source kinds. Only the latest
  * direct message scopes the turn, so an older mention cannot leak into a later
  * question.
  * @param agent - Tool-call agent (absent on some programmatic dispatches).
- * @returns Referenced ids, or an empty array.
+ * @returns The joined text, or an empty string.
  */
-export function referencedKnowledgeBaseIds(agent) {
+function latestDirectUserText(agent) {
   try {
     const session = agent?.session;
     const nodes = session?.surface?.nodes;
-    if (nodes === undefined || typeof session.eventAt !== 'function') return [];
+    if (nodes === undefined || typeof session.eventAt !== 'function') return '';
     const sequence = Array.from(nodes);
     for (let index = sequence.length - 1; index >= 0; index -= 1) {
       const event = session.eventAt(sequence[index]);
       if (event?.type !== 'user/message' || event.data?.source?.kind !== 'user') continue;
       const content = Array.isArray(event.data.content) ? event.data.content : [];
-      const text = content
+      return content
         .filter((block) => block?.type === 'text' && typeof block.text === 'string')
         .map((block) => block.text)
         .join('\n');
-      return knowledgeBaseIdsFromText(text);
     }
   } catch {
     /* a session shape this build does not expose: fall back to configured scope */
   }
-  return [];
+  return '';
+}
+
+/**
+ * Read the knowledge-base mentions of the latest direct user message.
+ * @param agent - Tool-call agent (absent on some programmatic dispatches).
+ * @returns Referenced ids, or an empty array.
+ */
+export function referencedKnowledgeBaseIds(agent) {
+  return knowledgeBaseIdsFromText(latestDirectUserText(agent));
+}
+
+/**
+ * Read the document mentions of the latest direct user message.
+ * @param agent - Tool-call agent (absent on some programmatic dispatches).
+ * @returns Referenced `{knowledgeBaseId, knowledgeId}` pairs, or an empty array.
+ */
+export function referencedDocumentMentions(agent) {
+  return documentMentionsFromText(latestDirectUserText(agent));
 }
 
 /**
@@ -1013,6 +1130,39 @@ async function resolveScope(config, requested, signal, referenced = []) {
 }
 
 /**
+ * Union the knowledge-base mentions and the mentioned documents' knowledge
+ * bases, preserving first-mention order (knowledge-base mentions first).
+ * @param knowledgeBaseIds - Knowledge-base mentions, in mention order.
+ * @param documents - Document mentions, in mention order.
+ * @returns Deduplicated ids.
+ */
+function unionKnowledgeBaseIds(knowledgeBaseIds, documents) {
+  const ids = [];
+  for (const id of knowledgeBaseIds) {
+    if (id !== '' && !ids.includes(id)) ids.push(id);
+  }
+  for (const document of documents) {
+    if (document.knowledgeBaseId !== '' && !ids.includes(document.knowledgeBaseId)) {
+      ids.push(document.knowledgeBaseId);
+    }
+  }
+  return ids;
+}
+
+/**
+ * Deduplicate the knowledge ids of document mentions in first-mention order.
+ * @param documents - Document mentions.
+ * @returns Non-empty knowledge ids.
+ */
+function documentKnowledgeIds(documents) {
+  const ids = [];
+  for (const document of documents) {
+    if (document.knowledgeId !== '' && !ids.includes(document.knowledgeId)) ids.push(document.knowledgeId);
+  }
+  return ids;
+}
+
+/**
  * Assemble tool definitions against a live configuration source.
  * @param getConfig - Reads the current effective configuration.
  * @returns Tool definitions ready for `ctx.tools.register`.
@@ -1078,7 +1228,8 @@ export function createTools(getConfig) {
         'Search the configured WeKnora knowledge bases and return matching passages verbatim (hybrid vector + keyword retrieval). '
         + 'Use it to ground answers in the organization\'s own documents. Every hit carries a knowledge_id that '
         + `${name('read_document')} accepts. When the user message contains an `
-        + '`@[name](weknora:kb/<id>)` mention, this tool automatically restricts itself to that knowledge base.',
+        + '`@[name](weknora:kb/<id>)` mention, this tool automatically restricts itself to that knowledge base. '
+        + 'An `@[name](weknora:doc/<kb>/<doc>)` mention restricts retrieval to those specific documents.',
       parameters: {
         type: 'object',
         additionalProperties: false,
@@ -1138,11 +1289,13 @@ export function createTools(getConfig) {
         const live = getConfig();
         const query = argString(args, 'query');
         if (query === undefined) throw new Error(`${name('search')}: query 不能为空`);
+        const documents = referencedDocumentMentions(exec?.agent);
+        const knowledgeIds = documentKnowledgeIds(documents);
         const knowledgeBaseIds = await resolveScope(
           live,
           argStringArray(args, 'knowledge_base_ids'),
           exec?.signal,
-          referencedKnowledgeBaseIds(exec?.agent),
+          unionKnowledgeBaseIds(referencedKnowledgeBaseIds(exec?.agent), documents),
         );
         if (knowledgeBaseIds.length === 0) throw new Error('当前凭据看不到任何知识库，请检查 API Key 权限。');
         const limit = Math.min(
@@ -1151,7 +1304,12 @@ export function createTools(getConfig) {
         );
         const payload = await requestJson(live, '/api/v1/knowledge-search', {
           method: 'POST',
-          body: { query, knowledge_base_ids: knowledgeBaseIds, match_count: limit },
+          body: {
+            query,
+            knowledge_base_ids: knowledgeBaseIds,
+            match_count: limit,
+            ...(knowledgeIds.length === 0 ? {} : { knowledge_ids: knowledgeIds }),
+          },
           signal: exec?.signal,
         });
         const rows = Array.isArray(payload?.data) ? payload.data : [];
@@ -1253,7 +1411,8 @@ export function createTools(getConfig) {
         'Ask WeKnora a question and return the answer produced by the agent configured in WeKnora, with its citations. '
         + 'Use it for broad questions that span several documents, or when the user wants the WeKnora-side agent\'s judgement. '
         + 'Unlike search, a model runs on the server, so it is slower and returns a conclusion rather than raw evidence. '
-        + 'An `@[name](weknora:kb/<id>)` mention in the user message scopes the answer to that knowledge base automatically.',
+        + 'An `@[name](weknora:kb/<id>)` mention in the user message scopes the answer to that knowledge base automatically, '
+        + 'and an `@[name](weknora:doc/<kb>/<doc>)` mention restricts the answer to those specific documents.',
       parameters: {
         type: 'object',
         additionalProperties: false,
@@ -1314,14 +1473,17 @@ export function createTools(getConfig) {
           sessionId = typeof created?.data?.id === 'string' ? created.data.id : '';
           if (sessionId === '') throw new Error('WeKnora 创建会话失败：响应中没有 session id');
         }
+        const documents = referencedDocumentMentions(exec?.agent);
         const requestedScope = argStringArray(args, 'knowledge_base_ids');
-        const mentionedScope = referencedKnowledgeBaseIds(exec?.agent);
+        const mentionedScope = unionKnowledgeBaseIds(referencedKnowledgeBaseIds(exec?.agent), documents);
         const scope = requestedScope.length > 0 ? requestedScope : mentionedScope;
+        const knowledgeIds = documentKnowledgeIds(documents);
         const body = {
           query,
           agent_enabled: true,
           ...(agentId === undefined ? {} : { agent_id: agentId }),
           ...(scope.length === 0 ? {} : { knowledge_base_ids: scope }),
+          ...(knowledgeIds.length === 0 ? {} : { knowledge_ids: knowledgeIds }),
         };
         const result = await chatOnce(
           live,
@@ -1362,6 +1524,8 @@ export function createTools(getConfig) {
 export const __internals = {
   knowledgeBaseIdsFromText,
   referencedKnowledgeBaseIds,
+  documentMentionsFromText,
+  referencedDocumentMentions,
   normalizeBase,
   readDefaults,
   effectiveConfig,

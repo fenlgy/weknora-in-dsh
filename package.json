@@ -1,6 +1,6 @@
 {
   "name": "dsh-weknora",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "把 WeKnora 知识库放进 DeepSeek Harness：左侧「知识库」面板、文章管理、检索，以及让 DSH Agent 直接调用知识库与 WeKnora 智能体的工具",
   "keywords": [
@@ -31,6 +31,7 @@
     "client.js",
     "cordis.patch.yml",
     "locale",
+    "vendor",
     "README.md",
     "LICENSE"
   ],
@@ -48,9 +49,14 @@
   },
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "e2e:mock": "node test/e2e/mock-weknora.mjs 19090"
+    "e2e:mock": "node test/e2e/mock-weknora.mjs 19090",
+    "build:vendor": "node scripts/build-vendor.mjs"
   },
   "engines": {
     "node": ">=20.11"
+  },
+  "devDependencies": {
+    "@toast-ui/editor": "3.2.2",
+    "esbuild": "0.28.2"
   }
 }
